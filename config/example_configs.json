@@ -1,28 +1,71 @@
 {
     "configurations": [
         {
-            "name": "Small Test Model",
-            "description": "Fast loading model for testing",
+            "name": "TinyLlama 1.1B (CPU-friendly)",
+            "description": "Compact chat model optimized for CPU",
             "config": {
-                "model": "facebook/opt-125m",
-                "tensor_parallel_size": 1,
-                "gpu_memory_utilization": 0.5,
-                "dtype": "auto"
+                "model": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+                "max_model_len": 2048,
+                "cpu_kvcache_space": 4,
+                "dtype": "bfloat16"
             }
         },
         {
-            "name": "Llama 2 7B Chat",
-            "description": "Production-ready 7B chat model",
+            "name": "Llama 3.2 1B (Gated)",
+            "description": "Latest Llama 3.2 1B model - requires HF token",
+            "config": {
+                "model": "meta-llama/Llama-3.2-1B",
+                "max_model_len": 2048,
+                "cpu_kvcache_space": 4,
+                "dtype": "bfloat16",
+                "hf_token": "YOUR_HF_TOKEN_HERE"
+            }
+        },
+        {
+            "name": "Gemma 2 2B (Gated)",
+            "description": "Google Gemma 2 2B - requires HF token",
+            "config": {
+                "model": "google/gemma-2-2b",
+                "max_model_len": 2048,
+                "cpu_kvcache_space": 6,
+                "dtype": "bfloat16",
+                "hf_token": "YOUR_HF_TOKEN_HERE"
+            }
+        },
+        {
+            "name": "OPT 125M (Testing)",
+            "description": "Tiny model for quick testing",
+            "config": {
+                "model": "facebook/opt-125m",
+                "max_model_len": 1024,
+                "cpu_kvcache_space": 2,
+                "dtype": "bfloat16"
+            }
+        },
+        {
+            "name": "OPT 1.3B",
+            "description": "Medium OPT model",
+            "config": {
+                "model": "facebook/opt-1.3b",
+                "max_model_len": 2048,
+                "cpu_kvcache_space": 8,
+                "dtype": "bfloat16"
+            }
+        },
+        {
+            "name": "Llama 2 7B (GPU)",
+            "description": "Production-ready 7B chat model (slow on CPU)",
             "config": {
                 "model": "meta-llama/Llama-2-7b-chat-hf",
                 "tensor_parallel_size": 1,
                 "gpu_memory_utilization": 0.9,
                 "dtype": "auto",
-                "enable_prefix_caching": true
+                "enable_prefix_caching": true,
+                "hf_token": "YOUR_HF_TOKEN_HERE"
             }
         },
         {
-            "name": "Mistral 7B Instruct",
+            "name": "Mistral 7B (GPU)",
             "description": "High-quality instruct model",
             "config": {
                 "model": "mistralai/Mistral-7B-Instruct-v0.2",
@@ -30,27 +73,6 @@
                 "gpu_memory_utilization": 0.9,
                 "dtype": "auto",
                 "enable_prefix_caching": true
-            }
-        },
-        {
-            "name": "Llama 2 13B (Multi-GPU)",
-            "description": "Larger model with tensor parallelism",
-            "config": {
-                "model": "meta-llama/Llama-2-13b-chat-hf",
-                "tensor_parallel_size": 2,
-                "gpu_memory_utilization": 0.9,
-                "dtype": "auto",
-                "enable_prefix_caching": true
-            }
-        },
-        {
-            "name": "Code Llama 7B",
-            "description": "Optimized for code generation",
-            "config": {
-                "model": "codellama/CodeLlama-7b-Instruct-hf",
-                "tensor_parallel_size": 1,
-                "gpu_memory_utilization": 0.9,
-                "dtype": "auto"
             }
         }
     ],

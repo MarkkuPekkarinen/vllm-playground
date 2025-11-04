@@ -23,6 +23,7 @@ class VLLMWebUI {
             // Configuration
             modelSelect: document.getElementById('model-select'),
             customModel: document.getElementById('custom-model'),
+            hfToken: document.getElementById('hf-token'),
             host: document.getElementById('host'),
             port: document.getElementById('port'),
             
@@ -50,6 +51,13 @@ class VLLMWebUI {
             enablePrefixCaching: document.getElementById('enable-prefix-caching'),
             disableLogStats: document.getElementById('disable-log-stats'),
             
+            // Template Settings
+            templateSettingsToggle: document.getElementById('template-settings-toggle'),
+            templateSettingsContent: document.getElementById('template-settings-content'),
+            chatTemplate: document.getElementById('chat-template'),
+            stopTokens: document.getElementById('stop-tokens'),
+            resetTemplateBtn: document.getElementById('reset-template-btn'),
+            
             // Command Preview
             commandText: document.getElementById('command-text'),
             copyCommandBtn: document.getElementById('copy-command-btn'),
@@ -64,6 +72,8 @@ class VLLMWebUI {
             // Chat
             chatContainer: document.getElementById('chat-container'),
             chatInput: document.getElementById('chat-input'),
+            systemPrompt: document.getElementById('system-prompt'),
+            clearSystemPromptBtn: document.getElementById('clear-system-prompt-btn'),
             temperature: document.getElementById('temperature'),
             maxTokens: document.getElementById('max-tokens'),
             tempValue: document.getElementById('temp-value'),
@@ -130,6 +140,7 @@ class VLLMWebUI {
             }
         });
         this.elements.clearChatBtn.addEventListener('click', () => this.clearChat());
+        this.elements.clearSystemPromptBtn.addEventListener('click', () => this.clearSystemPrompt());
         
         // Logs
         this.elements.clearLogsBtn.addEventListener('click', () => this.clearLogs());
@@ -159,6 +170,7 @@ class VLLMWebUI {
             this.elements.cpuThreads,
             this.elements.dtype,
             this.elements.maxModelLen,
+            this.elements.hfToken,
             this.elements.trustRemoteCode,
             this.elements.enablePrefixCaching,
             this.elements.disableLogStats
@@ -175,6 +187,12 @@ class VLLMWebUI {
         // Benchmark
         this.elements.runBenchmarkBtn.addEventListener('click', () => this.runBenchmark());
         this.elements.stopBenchmarkBtn.addEventListener('click', () => this.stopBenchmark());
+        
+        // Template Settings
+        this.elements.templateSettingsToggle.addEventListener('click', () => this.toggleTemplateSettings());
+        this.elements.resetTemplateBtn.addEventListener('click', () => this.resetTemplate());
+        this.elements.modelSelect.addEventListener('change', () => this.updateTemplateForModel());
+        this.elements.customModel.addEventListener('blur', () => this.updateTemplateForModel());
     }
 
     connectWebSocket() {
@@ -288,6 +306,7 @@ class VLLMWebUI {
         const model = this.elements.customModel.value.trim() || this.elements.modelSelect.value;
         const maxModelLen = this.elements.maxModelLen.value;
         const isCpuMode = this.elements.modeCpu.checked;
+        const hfToken = this.elements.hfToken.value.trim();
         
         const config = {
             model: model,
@@ -298,8 +317,22 @@ class VLLMWebUI {
             trust_remote_code: this.elements.trustRemoteCode.checked,
             enable_prefix_caching: this.elements.enablePrefixCaching.checked,
             disable_log_stats: this.elements.disableLogStats.checked,
-            use_cpu: isCpuMode
+            use_cpu: isCpuMode,
+            hf_token: hfToken || null  // Include HF token for gated models
         };
+        
+        // Add custom template and stop tokens if provided
+        const customTemplate = this.elements.chatTemplate.value.trim();
+        const customStopTokens = this.elements.stopTokens.value.trim();
+        
+        if (customTemplate) {
+            config.custom_chat_template = customTemplate;
+        }
+        
+        if (customStopTokens) {
+            // Parse comma-separated stop tokens
+            config.custom_stop_tokens = customStopTokens.split(',').map(t => t.trim()).filter(t => t.length > 0);
+        }
         
         if (isCpuMode) {
             // CPU-specific settings
@@ -323,7 +356,7 @@ class VLLMWebUI {
         this.elements.sendBtn.classList.remove('btn-ready');
         
         this.elements.startBtn.disabled = true;
-        this.elements.startBtn.textContent = '⏳ Starting...';
+        this.elements.startBtn.textContent = 'Starting...';
         
         // Add immediate log feedback
         this.addLog('🚀 Starting vLLM server...', 'info');
@@ -354,13 +387,13 @@ class VLLMWebUI {
             this.showNotification(`Failed to start: ${error.message}`, 'error');
             this.elements.startBtn.disabled = false;
         } finally {
-            this.elements.startBtn.textContent = '▶️ Start Server';
+            this.elements.startBtn.textContent = 'Start Server';
         }
     }
 
     async stopServer() {
         this.elements.stopBtn.disabled = true;
-        this.elements.stopBtn.textContent = '⏳ Stopping...';
+        this.elements.stopBtn.textContent = 'Stopping...';
         
         this.addLog('⏹️ Stopping vLLM server...', 'info');
         
@@ -382,7 +415,7 @@ class VLLMWebUI {
             this.showNotification(`Failed to stop: ${error.message}`, 'error');
             this.elements.stopBtn.disabled = false;
         } finally {
-            this.elements.stopBtn.textContent = '⏹️ Stop Server';
+            this.elements.stopBtn.textContent = 'Stop Server';
         }
     }
 
@@ -398,6 +431,14 @@ class VLLMWebUI {
             return;
         }
         
+        // Add system message at the start of conversation if provided and not already added
+        const systemPrompt = this.elements.systemPrompt.value.trim();
+        if (systemPrompt && this.chatHistory.length === 0) {
+            this.chatHistory.push({role: 'system', content: systemPrompt});
+            // Optionally display it in the chat
+            this.addChatMessage('system', `System prompt set: ${systemPrompt}`);
+        }
+        
         // Add user message to chat
         this.addChatMessage('user', message);
         this.chatHistory.push({role: 'user', content: message});
@@ -407,7 +448,7 @@ class VLLMWebUI {
         
         // Disable send button
         this.elements.sendBtn.disabled = true;
-        this.elements.sendBtn.textContent = '⏳ Generating...';
+        this.elements.sendBtn.textContent = 'Generating...';
         
         // Create placeholder for assistant message
         const assistantMessageDiv = this.addChatMessage('assistant', '▌');
@@ -497,6 +538,9 @@ class VLLMWebUI {
             
             // Remove cursor and finalize
             if (fullText) {
+                // Clean up response: trim and limit excessive newlines (4+ → 2)
+                fullText = fullText.replace(/\n{4,}/g, '\n\n').trim();
+                
                 textSpan.textContent = fullText;
                 this.chatHistory.push({role: 'assistant', content: fullText});
             } else {
@@ -591,6 +635,11 @@ class VLLMWebUI {
             </div>
         `;
     }
+    
+    clearSystemPrompt() {
+        this.elements.systemPrompt.value = '';
+        this.showNotification('System prompt cleared', 'success');
+    }
 
     addLog(message, type = 'info') {
         // Check if server startup is complete (match various formats)
@@ -643,7 +692,7 @@ class VLLMWebUI {
                 this.elements.sendBtn.classList.add('btn-ready');
                 this.elements.sendBtn.disabled = false;
                 // Add a brief notification
-                this.showNotification('🎉 Server is ready to chat!', 'success');
+                this.showNotification('Server is ready to chat!', 'success');
                 console.log('✅ Send button turned green!');
             }
         } else if (!this.serverReady) {
@@ -738,26 +787,40 @@ class VLLMWebUI {
         const enablePrefixCaching = this.elements.enablePrefixCaching.checked;
         const disableLogStats = this.elements.disableLogStats.checked;
         const isCpuMode = this.elements.modeCpu.checked;
+        const hfToken = this.elements.hfToken.value.trim();
         
         // Build command string
         let cmd;
         
         if (isCpuMode) {
             // CPU mode: show environment variables and use openai.api_server
-            const cpuKvcache = this.elements.cpuKvcache?.value || '40';
+            const cpuKvcache = this.elements.cpuKvcache?.value || '4';
             const cpuThreads = this.elements.cpuThreads?.value || 'auto';
             
             cmd = `# CPU Mode - Set environment variables:\n`;
             cmd += `export VLLM_CPU_KVCACHE_SPACE=${cpuKvcache}\n`;
-            cmd += `export VLLM_CPU_OMP_THREADS_BIND=${cpuThreads}\n\n`;
-            cmd += `python -m vllm.entrypoints.openai.api_server`;
+            cmd += `export VLLM_CPU_OMP_THREADS_BIND=${cpuThreads}\n`;
+            cmd += `export VLLM_TARGET_DEVICE=cpu\n`;
+            cmd += `export VLLM_USE_V1=1  # Required to be explicitly set\n`;
+            if (hfToken) {
+                cmd += `export HF_TOKEN=[YOUR_TOKEN]\n`;
+            }
+            cmd += `\npython -m vllm.entrypoints.openai.api_server`;
             cmd += ` \\\n  --model ${model}`;
             cmd += ` \\\n  --host ${host}`;
             cmd += ` \\\n  --port ${port}`;
             cmd += ` \\\n  --dtype bfloat16`;
+            if (!maxModelLen) {
+                cmd += ` \\\n  --max-model-len 2048`;
+                cmd += ` \\\n  --max-num-batched-tokens 2048`;
+            }
         } else {
             // GPU mode: use openai.api_server
-            cmd = `python -m vllm.entrypoints.openai.api_server`;
+            if (hfToken) {
+                cmd = `# Set HF token for gated models:\n`;
+                cmd += `export HF_TOKEN=[YOUR_TOKEN]\n\n`;
+            }
+            cmd += `python -m vllm.entrypoints.openai.api_server`;
             cmd += ` \\\n  --model ${model}`;
             cmd += ` \\\n  --host ${host}`;
             cmd += ` \\\n  --port ${port}`;
@@ -770,10 +833,15 @@ class VLLMWebUI {
             cmd += ` \\\n  --tensor-parallel-size ${tensorParallel}`;
             cmd += ` \\\n  --gpu-memory-utilization ${gpuMemory}`;
             cmd += ` \\\n  --load-format auto`;
+            if (!maxModelLen) {
+                cmd += ` \\\n  --max-model-len 8192`;
+                cmd += ` \\\n  --max-num-batched-tokens 8192`;
+            }
         }
         
         if (maxModelLen) {
             cmd += ` \\\n  --max-model-len ${maxModelLen}`;
+            cmd += ` \\\n  --max-num-batched-tokens ${maxModelLen}`;
         }
         
         if (trustRemoteCode) {
@@ -800,7 +868,7 @@ class VLLMWebUI {
             
             // Visual feedback
             const originalText = this.elements.copyCommandBtn.textContent;
-            this.elements.copyCommandBtn.textContent = '✓ Copied!';
+            this.elements.copyCommandBtn.textContent = 'Copied!';
             this.elements.copyCommandBtn.classList.add('copied');
             
             setTimeout(() => {
@@ -941,6 +1009,123 @@ class VLLMWebUI {
         if (this.benchmarkPollInterval) {
             clearInterval(this.benchmarkPollInterval);
             this.benchmarkPollInterval = null;
+        }
+    }
+
+    // ============ Template Settings ============
+    toggleTemplateSettings() {
+        const content = this.elements.templateSettingsContent;
+        const icon = this.elements.templateSettingsToggle.querySelector('.toggle-icon');
+        
+        if (content.style.display === 'none') {
+            content.style.display = 'block';
+            icon.classList.add('open');
+            // Update template on first open
+            if (!this.elements.chatTemplate.value) {
+                this.updateTemplateForModel();
+            }
+        } else {
+            content.style.display = 'none';
+            icon.classList.remove('open');
+        }
+    }
+    
+    updateTemplateForModel() {
+        const model = this.elements.customModel.value.trim() || this.elements.modelSelect.value;
+        const template = this.getTemplateForModel(model);
+        const stopTokens = this.getStopTokensForModel(model);
+        
+        this.elements.chatTemplate.value = template;
+        this.elements.stopTokens.value = stopTokens.join(', ');
+        
+        console.log(`Template updated for model: ${model}`);
+    }
+    
+    resetTemplate() {
+        this.updateTemplateForModel();
+        this.showNotification('Template reset to auto-detected values', 'success');
+    }
+    
+    getTemplateForModel(modelName) {
+        const model = modelName.toLowerCase();
+        
+        // Llama 2/3 models
+        if (model.includes('llama-2') || model.includes('llama-3')) {
+            return "{% for message in messages %}{% if message['role'] == 'system' %}<<SYS>>\\n{{ message['content'] }}\\n<</SYS>>\\n\\n{% endif %}{% if message['role'] == 'user' %}[INST] {{ message['content'] }} [/INST]{% endif %}{% if message['role'] == 'assistant' %} {{ message['content'] }}</s>{% endif %}{% endfor %}";
+        }
+        
+        // Mistral models
+        else if (model.includes('mistral') || model.includes('mixtral')) {
+            return "{% for message in messages %}{% if message['role'] == 'user' %}[INST] {{ message['content'] }} [/INST]{% endif %}{% if message['role'] == 'assistant' %}{{ message['content'] }}</s>{% endif %}{% endfor %}";
+        }
+        
+        // Gemma models
+        else if (model.includes('gemma')) {
+            return "{% for message in messages %}{% if message['role'] == 'user' %}<start_of_turn>user\\n{{ message['content'] }}<end_of_turn>\\n{% endif %}{% if message['role'] == 'assistant' %}<start_of_turn>model\\n{{ message['content'] }}<end_of_turn>\\n{% endif %}{% endfor %}<start_of_turn>model\\n";
+        }
+        
+        // TinyLlama
+        else if (model.includes('tinyllama') || model.includes('tiny-llama')) {
+            return "{% for message in messages %}{% if message['role'] == 'system' %}<|system|>\\n{{ message['content'] }}</s>\\n{% endif %}{% if message['role'] == 'user' %}<|user|>\\n{{ message['content'] }}</s>\\n{% endif %}{% if message['role'] == 'assistant' %}<|assistant|>\\n{{ message['content'] }}</s>\\n{% endif %}{% endfor %}<|assistant|>\\n";
+        }
+        
+        // Vicuna
+        else if (model.includes('vicuna')) {
+            return "{% for message in messages %}{% if message['role'] == 'system' %}{{ message['content'] }}\\n\\n{% endif %}{% if message['role'] == 'user' %}USER: {{ message['content'] }}\\n{% endif %}{% if message['role'] == 'assistant' %}ASSISTANT: {{ message['content'] }}</s>\\n{% endif %}{% endfor %}ASSISTANT:";
+        }
+        
+        // Alpaca
+        else if (model.includes('alpaca')) {
+            return "{% for message in messages %}{% if message['role'] == 'system' %}{{ message['content'] }}\\n\\n{% endif %}{% if message['role'] == 'user' %}### Instruction:\\n{{ message['content'] }}\\n\\n{% endif %}{% if message['role'] == 'assistant' %}### Response:\\n{{ message['content'] }}\\n\\n{% endif %}{% endfor %}### Response:";
+        }
+        
+        // CodeLlama
+        else if (model.includes('codellama') || model.includes('code-llama')) {
+            return "{% for message in messages %}{% if message['role'] == 'system' %}<<SYS>>\\n{{ message['content'] }}\\n<</SYS>>\\n\\n{% endif %}{% if message['role'] == 'user' %}[INST] {{ message['content'] }} [/INST]{% endif %}{% if message['role'] == 'assistant' %} {{ message['content'] }}</s>{% endif %}{% endfor %}";
+        }
+        
+        // OPT and generic
+        else {
+            return "{% for message in messages %}{% if message['role'] == 'user' %}User: {{ message['content'] }}\\n{% elif message['role'] == 'assistant' %}Assistant: {{ message['content'] }}\\n{% elif message['role'] == 'system' %}{{ message['content'] }}\\n{% endif %}{% endfor %}Assistant:";
+        }
+    }
+    
+    getStopTokensForModel(modelName) {
+        const model = modelName.toLowerCase();
+        
+        // Llama models
+        if (model.includes('llama')) {
+            return ["[INST]", "</s>", "<s>", "[/INST] [INST]"];
+        }
+        
+        // Mistral models
+        else if (model.includes('mistral') || model.includes('mixtral')) {
+            return ["[INST]", "</s>", "[/INST] [INST]"];
+        }
+        
+        // Gemma models
+        else if (model.includes('gemma')) {
+            return ["<start_of_turn>", "<end_of_turn>"];
+        }
+        
+        // TinyLlama - more aggressive stop tokens to prevent rambling
+        else if (model.includes('tinyllama') || model.includes('tiny-llama')) {
+            return ["<|user|>", "<|system|>", "</s>", "\\n\\n", " #", "😊", "🤗", "🎉", "❤️", "User:", "Assistant:", "How about you?", "I'm doing"];
+        }
+        
+        // Vicuna
+        else if (model.includes('vicuna')) {
+            return ["USER:", "ASSISTANT:", "</s>"];
+        }
+        
+        // Alpaca
+        else if (model.includes('alpaca')) {
+            return ["### Instruction:", "### Response:"];
+        }
+        
+        // Default generic stop tokens
+        else {
+            return ["\\n\\nUser:", "\\n\\nAssistant:"];
         }
     }
 

@@ -2,6 +2,8 @@
 
 A modern web interface for managing and interacting with vLLM (Very Large Language Model) servers. Supports both GPU and CPU modes, with special optimizations for macOS Apple Silicon.
 
+![vLLM WebUI Interface](assets/vllm-webui.png)
+
 ## 📁 Project Structure
 
 ```
@@ -30,16 +32,15 @@ vllm-webui/
 │   └── example_configs.json  # Example configurations
 │
 └── docs/                 # Documentation
-    ├── QUICKSTART.md    # Quick start guide
-    ├── GETTING_STARTED.md
-    ├── MACOS_CPU_GUIDE.md  # macOS CPU setup guide
-    ├── QUICK_REFERENCE.md   # Command reference
-    ├── FEATURES.md       # Feature documentation
-    ├── PERFORMANCE_METRICS.md
-    ├── COMMAND_PREVIEW.md
-    ├── RESIZABLE_PANELS.md
-    ├── PROJECT_SUMMARY.md
-    └── README_SETUP.md
+    ├── QUICKSTART.md           # Quick start guide
+    ├── MACOS_CPU_GUIDE.md      # macOS CPU setup guide
+    ├── CPU_MODELS_QUICKSTART.md # CPU-optimized models guide
+    ├── GATED_MODELS_GUIDE.md   # Guide for accessing Llama, Gemma, etc.
+    ├── CHAT_TEMPLATES.md       # Model-specific chat templates
+    ├── TROUBLESHOOTING.md      # Common issues and solutions
+    ├── FEATURES.md             # Feature documentation
+    ├── PERFORMANCE_METRICS.md  # Performance metrics
+    └── QUICK_REFERENCE.md      # Command reference
 ```
 
 ## 🚀 Quick Start
@@ -93,20 +94,32 @@ nano config/vllm_cpu.env
 
 - **Server Management**: Start/stop vLLM servers from the UI
 - **Chat Interface**: Interactive chat with streaming responses
+- **Smart Chat Templates**: Automatic model-specific template detection (Nov 2025) 🆕
 - **Performance Metrics**: Real-time token counts and generation speed
 - **Model Support**: Pre-configured popular models + custom model support
+- **Gated Model Access**: Built-in HuggingFace token support for Llama, Gemma, etc.
 - **CPU & GPU Modes**: Automatic detection and configuration
+- **macOS Optimized**: Special support for Apple Silicon
 - **Benchmarking**: GuideLLM integration for performance testing
 - **Resizable Panels**: Customizable layout
 - **Command Preview**: See exact commands before execution
 
 ## 📖 Documentation
 
-- [Quick Start Guide](docs/QUICKSTART.md)
-- [macOS CPU Setup](docs/MACOS_CPU_GUIDE.md)
-- [Feature Overview](docs/FEATURES.md)
-- [Performance Metrics](docs/PERFORMANCE_METRICS.md)
-- [Command Reference](docs/QUICK_REFERENCE.md)
+### Getting Started
+- **[Quick Start Guide](docs/QUICKSTART.md)** - Get up and running in minutes
+- [macOS CPU Setup](docs/MACOS_CPU_GUIDE.md) - Apple Silicon optimization guide
+- [CPU Models Quickstart](docs/CPU_MODELS_QUICKSTART.md) - Best models for CPU
+
+### Model Configuration
+- **[Gated Models Guide (Llama, Gemma)](docs/GATED_MODELS_GUIDE.md)** ⭐ - Access restricted models
+- **[Chat Templates Explained](docs/CHAT_TEMPLATES.md)** 🆕 - Model-specific templates
+
+### Reference
+- [Feature Overview](docs/FEATURES.md) - Complete feature list
+- [Performance Metrics](docs/PERFORMANCE_METRICS.md) - Benchmarking and metrics
+- [Command Reference](docs/QUICK_REFERENCE.md) - Command cheat sheet
+- [Troubleshooting](docs/TROUBLESHOOTING.md) - Common issues and solutions
 
 ## 🔧 Configuration
 
@@ -120,10 +133,18 @@ export VLLM_CPU_OMP_THREADS_BIND=auto
 
 ### Supported Models
 
-- TinyLlama/TinyLlama-1.1B-Chat-v1.0 (default)
-- RedHatAI/Llama-3.2-1B-Instruct-FP8
-- RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8
+**CPU-Optimized Models (Recommended for macOS):**
+- **TinyLlama/TinyLlama-1.1B-Chat-v1.0** (default) - Fast, no token required
+- **meta-llama/Llama-3.2-1B** - Latest Llama, requires HF token (gated)
+- **google/gemma-2-2b** - High quality, requires HF token (gated)
+- facebook/opt-125m - Tiny test model
+
+**Larger Models (Slow on CPU, better on GPU):**
+- meta-llama/Llama-2-7b-chat-hf (requires HF token)
+- mistralai/Mistral-7B-Instruct-v0.2
 - Custom models via text input
+
+**📌 Note**: Gated models (Llama, Gemma) require a HuggingFace token. See [Gated Models Guide](docs/GATED_MODELS_GUIDE.md) for setup.
 
 ## 🛠️ Development
 

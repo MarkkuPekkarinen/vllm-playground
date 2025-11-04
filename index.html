@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>vLLM WebUI - Server Management & Chat Interface</title>
+    <link rel="icon" type="image/jpeg" href="/assets/vllm.jpeg">
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
@@ -11,7 +12,10 @@
         <!-- Header -->
         <header class="header">
             <div class="header-content">
-                <h1>🚀 vLLM WebUI</h1>
+                <div class="logo-container">
+                    <img src="/assets/vllm.png" alt="vLLM" class="logo" onerror="this.style.display='none'">
+                    <h1><span class="logo-text">vLLM</span> WebUI</h1>
+                </div>
                 <div class="status-indicator">
                     <span id="status-dot" class="status-dot"></span>
                     <span id="status-text">Disconnected</span>
@@ -30,12 +34,30 @@
                     <div class="form-group">
                         <label for="model-select">Model</label>
                         <select id="model-select" class="form-control">
-                            <option value="TinyLlama/TinyLlama-1.1B-Chat-v1.0" selected>TinyLlama/TinyLlama-1.1B-Chat-v1.0</option>
-                            <option value="RedHatAI/Llama-3.2-1B-Instruct-FP8">RedHatAI/Llama-3.2-1B-Instruct-FP8</option>
-                            <option value="RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8">RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8</option>
+                            <!-- CPU-Optimized Models (Recommended for macOS) -->
+                            <optgroup label="🖥️ CPU-Friendly Models">
+                                <option value="TinyLlama/TinyLlama-1.1B-Chat-v1.0" selected>TinyLlama 1.1B Chat (Fast, No token)</option>
+                                <option value="meta-llama/Llama-3.2-1B">Llama 3.2 1B (Gated, needs HF token)</option>
+                                <option value="google/gemma-2-2b">Gemma 2 2B (Gated, needs HF token)</option>
+                                <option value="facebook/opt-125m">OPT 125M (Tiny test model)</option>
+                                <option value="facebook/opt-1.3b">OPT 1.3B</option>
+                            </optgroup>
+                            <!-- Larger Models (Slower on CPU) -->
+                            <optgroup label="🎮 GPU-Optimized Models (Slow on CPU)">
+                                <option value="meta-llama/Llama-2-7b-chat-hf">Llama 2 7B Chat (Gated)</option>
+                                <option value="mistralai/Mistral-7B-Instruct-v0.2">Mistral 7B Instruct</option>
+                                <option value="codellama/CodeLlama-7b-Instruct-hf">CodeLlama 7B Instruct</option>
+                            </optgroup>
                         </select>
-                        <small class="form-help">All models support chat interface</small>
-                        <input type="text" id="custom-model" class="form-control" placeholder="Custom model name">
+                        <small class="form-help">All models support chat interface. Gated models require HF token below.</small>
+                        <input type="text" id="custom-model" class="form-control" placeholder="Or enter custom model name">
+                    </div>
+
+                    <!-- HuggingFace Token for Gated Models -->
+                    <div class="form-group">
+                        <label for="hf-token">HuggingFace Token (Optional)</label>
+                        <input type="password" id="hf-token" class="form-control" placeholder="hf_xxxxxxxxxxxxx">
+                        <small class="form-help">Required for gated models (Llama, Gemma). Get token from <a href="https://huggingface.co/settings/tokens" target="_blank">HuggingFace Settings</a></small>
                     </div>
 
                     <!-- CPU/GPU Mode Toggle -->
@@ -84,8 +106,8 @@
                         <div class="form-row">
                             <div class="form-group">
                                 <label for="cpu-kvcache">CPU KV Cache Space (GB)</label>
-                                <input type="number" id="cpu-kvcache" class="form-control" value="40" min="1" max="200">
-                                <small class="form-help">Memory allocated for KV cache</small>
+                                <input type="number" id="cpu-kvcache" class="form-control" value="4" min="1" max="200">
+                                <small class="form-help">Memory allocated for KV cache (start with 4GB)</small>
                             </div>
                             <div class="form-group">
                                 <label for="cpu-threads">CPU Thread Binding</label>
@@ -111,8 +133,31 @@
 
                     <div class="form-group">
                         <label for="max-model-len">Max Model Length (optional)</label>
-                        <input type="number" id="max-model-len" class="form-control" placeholder="Auto">
-                        <small class="form-help">⚠️ Leave empty for auto-detect. Setting too high may cause errors.</small>
+                        <input type="number" id="max-model-len" class="form-control" placeholder="2048 (CPU) / 8192 (GPU)">
+                        <small class="form-help">Leave empty to use safe defaults: 2048 (CPU) or 8192 (GPU)</small>
+                    </div>
+
+                    <!-- Advanced: Chat Template Settings -->
+                    <div class="template-settings-section">
+                        <div class="template-settings-header" id="template-settings-toggle">
+                            <h3>Chat Template Settings (Advanced)</h3>
+                            <span class="toggle-icon">▼</span>
+                        </div>
+                        <div class="template-settings-content" id="template-settings-content" style="display: none;">
+                            <div class="form-group">
+                                <label for="chat-template">Chat Template (Jinja2)</label>
+                                <textarea id="chat-template" class="form-control template-textarea" rows="4" spellcheck="false" placeholder="Auto-detected based on model..."></textarea>
+                                <small class="form-help">Auto-detected for known models. Edit to customize. Uses Jinja2 syntax.</small>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="stop-tokens">Stop Tokens (comma-separated)</label>
+                                <input type="text" id="stop-tokens" class="form-control" placeholder="Auto-detected based on model...">
+                                <small class="form-help">Tokens that signal end of response. Example: &lt;|user|&gt;, &lt;|system|&gt;, &lt;/s&gt;</small>
+                            </div>
+                            
+                            <button id="reset-template-btn" class="btn btn-secondary btn-sm" style="width: 100%; margin-top: 10px;">Reset to Auto-Detected</button>
+                        </div>
                     </div>
 
                     <div class="form-group checkbox-group">
@@ -139,16 +184,16 @@
                     <!-- Command Preview Section -->
                     <div class="command-preview-section">
                         <div class="command-preview-header">
-                            <h3>🖥️ Command Preview</h3>
-                            <button id="copy-command-btn" class="btn btn-secondary btn-sm" title="Copy command">📋 Copy</button>
+                            <h3>Command Preview</h3>
+                            <button id="copy-command-btn" class="btn btn-secondary btn-sm" title="Copy command">Copy</button>
                         </div>
                         <textarea id="command-text" class="command-preview-textarea" rows="8" spellcheck="false">python -m vllm.entrypoints.openai.api_server --model facebook/opt-125m</textarea>
-                        <small class="command-help">💡 Edit the command directly or use the form above. Your edits will be used when starting the server.</small>
+                        <small class="command-help">Edit the command directly or use the form above. Your edits will be used when starting the server.</small>
                     </div>
 
                     <div class="button-group">
-                        <button id="start-btn" class="btn btn-primary">▶️ Start Server</button>
-                        <button id="stop-btn" class="btn btn-danger" disabled>⏹️ Stop Server</button>
+                        <button id="start-btn" class="btn btn-primary">Start Server</button>
+                        <button id="stop-btn" class="btn btn-danger" disabled>Stop Server</button>
                     </div>
                 </div>
                 <div class="resize-handle resize-handle-vertical" data-direction="horizontal"></div>
@@ -171,14 +216,24 @@
                     </div>
 
                     <div class="chat-input-area">
+                        <!-- System Prompt (Optional) -->
+                        <div class="system-prompt-section">
+                            <div class="system-prompt-header">
+                                <label for="system-prompt">System Prompt (Optional):</label>
+                                <button id="clear-system-prompt-btn" class="btn btn-secondary btn-sm" style="min-width: 80px; padding: 6px 16px;" title="Clear system prompt">Clear</button>
+                            </div>
+                            <textarea id="system-prompt" class="system-prompt-input" rows="2">You are a helpful assistant. Provide brief, direct answers without emojis or hashtags.</textarea>
+                            <small class="form-help">Set behavior for the model. Applied at start of conversation.</small>
+                        </div>
+                        
                         <div class="generation-params">
                             <div class="param-group">
-                                <label for="temperature">Temperature: <span id="temp-value">0.7</span></label>
-                                <input type="range" id="temperature" min="0" max="2" step="0.1" value="0.7">
+                                <label for="temperature">Temperature: <span id="temp-value">0.3</span></label>
+                                <input type="range" id="temperature" min="0" max="1" step="0.05" value="0.3">
                             </div>
                             <div class="param-group">
-                                <label for="max-tokens">Max Tokens: <span id="tokens-value">512</span></label>
-                                <input type="range" id="max-tokens" min="1" max="4096" step="1" value="512">
+                                <label for="max-tokens">Max Tokens: <span id="tokens-value">256</span></label>
+                                <input type="range" id="max-tokens" min="1" max="4096" step="1" value="256">
                             </div>
                         </div>
                         
@@ -192,7 +247,7 @@
                 <!-- Chat Performance Metrics Section -->
                 <div class="chat-metrics-below">
                     <div class="panel-header">
-                        <h3>📊 Last Response Metrics</h3>
+                        <h3>Last Response Metrics</h3>
                     </div>
                     <div id="chat-metrics" class="chat-metrics-grid">
                         <div class="chat-metric-item">
@@ -250,8 +305,8 @@
                 <div class="panel-header">
                     <h2>📊 Performance Metrics (GuideLLM)</h2>
                     <div class="metrics-controls">
-                        <button id="run-benchmark-btn" class="btn btn-primary btn-sm" disabled>▶️ Run Benchmark</button>
-                        <button id="stop-benchmark-btn" class="btn btn-danger btn-sm" disabled style="display: none;">⏹️ Stop</button>
+                        <button id="run-benchmark-btn" class="btn btn-primary btn-sm" disabled>Run Benchmark</button>
+                        <button id="stop-benchmark-btn" class="btn btn-danger btn-sm" disabled style="display: none;">Stop</button>
                     </div>
                 </div>
 
@@ -280,7 +335,7 @@
                 <!-- Metrics Display -->
                 <div id="metrics-display" class="metrics-display">
                     <div class="metrics-placeholder">
-                        <p>⏱️ No benchmark data available</p>
+                        <p>No benchmark data available</p>
                         <p class="metrics-help">Start the vLLM server and click "Run Benchmark" to test performance</p>
                     </div>
                 </div>

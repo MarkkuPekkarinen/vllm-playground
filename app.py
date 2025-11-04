@@ -25,8 +25,12 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="vLLM WebUI", version="1.0.0")
 
-# Mount static files
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# Get base directory
+BASE_DIR = Path(__file__).parent
+
+# Mount static files (must be before routes)
+app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+app.mount("/assets", StaticFiles(directory=str(BASE_DIR / "assets")), name="assets")
 
 # Global state
 vllm_process: Optional[subprocess.Popen] = None
@@ -36,7 +40,7 @@ websocket_connections: List[WebSocket] = []
 
 class VLLMConfig(BaseModel):
     """Configuration for vLLM server"""
-    model: str = "facebook/opt-125m"
+    model: str = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"  # CPU-friendly default
     host: str = "0.0.0.0"
     port: int = 8000
     tensor_parallel_size: int = 1
@@ -48,10 +52,16 @@ class VLLMConfig(BaseModel):
     load_format: str = "auto"
     disable_log_stats: bool = False
     enable_prefix_caching: bool = False
+    # HuggingFace token for gated models (Llama, Gemma, etc.)
+    # Get token from https://huggingface.co/settings/tokens
+    hf_token: Optional[str] = None
     # CPU-specific options
     use_cpu: bool = False
-    cpu_kvcache_space: int = 40  # GB for CPU KV cache
+    cpu_kvcache_space: int = 4  # GB for CPU KV cache (reduced default for stability)
     cpu_omp_threads_bind: str = "auto"  # CPU thread binding
+    # Custom chat template and stop tokens (optional - overrides auto-detection)
+    custom_chat_template: Optional[str] = None
+    custom_stop_tokens: Optional[List[str]] = None
 
 
 class ChatMessage(BaseModel):
@@ -100,6 +110,95 @@ current_config: Optional[VLLMConfig] = None
 server_start_time: Optional[datetime] = None
 benchmark_task: Optional[asyncio.Task] = None
 benchmark_results: Optional[BenchmarkResults] = None
+
+
+def get_chat_template_for_model(model_name: str) -> str:
+    """
+    Get the appropriate chat template for a specific model.
+    Returns model-specific template if available, otherwise returns a generic template.
+    """
+    model_lower = model_name.lower()
+    
+    # Llama 2/3 models
+    if 'llama-2' in model_lower or 'llama-3' in model_lower:
+        return "{% for message in messages %}{% if message['role'] == 'system' %}<<SYS>>\\n{{ message['content'] }}\\n<</SYS>>\\n\\n{% endif %}{% if message['role'] == 'user' %}[INST] {{ message['content'] }} [/INST]{% endif %}{% if message['role'] == 'assistant' %} {{ message['content'] }}</s>{% endif %}{% endfor %}"
+    
+    # Mistral models
+    elif 'mistral' in model_lower or 'mixtral' in model_lower:
+        return "{% for message in messages %}{% if message['role'] == 'user' %}[INST] {{ message['content'] }} [/INST]{% endif %}{% if message['role'] == 'assistant' %}{{ message['content'] }}</s>{% endif %}{% endfor %}"
+    
+    # Gemma models (use ChatML-style)
+    elif 'gemma' in model_lower:
+        return "{% for message in messages %}{% if message['role'] == 'user' %}<start_of_turn>user\\n{{ message['content'] }}<end_of_turn>\\n{% endif %}{% if message['role'] == 'assistant' %}<start_of_turn>model\\n{{ message['content'] }}<end_of_turn>\\n{% endif %}{% endfor %}<start_of_turn>model\\n"
+    
+    # TinyLlama and similar (use ChatML) - fixed to always add generation prompt
+    elif 'tinyllama' in model_lower or 'tiny-llama' in model_lower:
+        return "{% for message in messages %}{% if message['role'] == 'system' %}<|system|>\\n{{ message['content'] }}</s>\\n{% endif %}{% if message['role'] == 'user' %}<|user|>\\n{{ message['content'] }}</s>\\n{% endif %}{% if message['role'] == 'assistant' %}<|assistant|>\\n{{ message['content'] }}</s>\\n{% endif %}{% endfor %}<|assistant|>\\n"
+    
+    # Vicuna models
+    elif 'vicuna' in model_lower:
+        return "{% for message in messages %}{% if message['role'] == 'system' %}{{ message['content'] }}\\n\\n{% endif %}{% if message['role'] == 'user' %}USER: {{ message['content'] }}\\n{% endif %}{% if message['role'] == 'assistant' %}ASSISTANT: {{ message['content'] }}</s>\\n{% endif %}{% endfor %}ASSISTANT:"
+    
+    # Alpaca models
+    elif 'alpaca' in model_lower:
+        return "{% for message in messages %}{% if message['role'] == 'system' %}{{ message['content'] }}\\n\\n{% endif %}{% if message['role'] == 'user' %}### Instruction:\\n{{ message['content'] }}\\n\\n{% endif %}{% if message['role'] == 'assistant' %}### Response:\\n{{ message['content'] }}\\n\\n{% endif %}{% endfor %}### Response:"
+    
+    # CodeLlama
+    elif 'codellama' in model_lower or 'code-llama' in model_lower:
+        return "{% for message in messages %}{% if message['role'] == 'system' %}<<SYS>>\\n{{ message['content'] }}\\n<</SYS>>\\n\\n{% endif %}{% if message['role'] == 'user' %}[INST] {{ message['content'] }} [/INST]{% endif %}{% if message['role'] == 'assistant' %} {{ message['content'] }}</s>{% endif %}{% endfor %}"
+    
+    # OPT and other base models (generic simple format)
+    elif 'opt' in model_lower:
+        return "{% for message in messages %}{% if message['role'] == 'user' %}User: {{ message['content'] }}\\n{% elif message['role'] == 'assistant' %}Assistant: {{ message['content'] }}\\n{% elif message['role'] == 'system' %}{{ message['content'] }}\\n{% endif %}{% endfor %}Assistant:"
+    
+    # Default generic template for unknown models
+    else:
+        logger.info(f"Using generic chat template for model: {model_name}")
+        return "{% for message in messages %}{% if message['role'] == 'user' %}User: {{ message['content'] }}\\n{% elif message['role'] == 'assistant' %}Assistant: {{ message['content'] }}\\n{% elif message['role'] == 'system' %}{{ message['content'] }}\\n{% endif %}{% endfor %}Assistant:"
+
+
+def get_stop_tokens_for_model(model_name: str) -> List[str]:
+    """
+    Get appropriate stop tokens for a specific model.
+    Uses only special tokens that won't appear in natural text.
+    """
+    model_lower = model_name.lower()
+    
+    # Llama models - use special tokens only
+    if 'llama' in model_lower:
+        return ["[INST]", "</s>", "<s>", "[/INST] [INST]"]
+    
+    # Mistral models - use special tokens only
+    elif 'mistral' in model_lower or 'mixtral' in model_lower:
+        return ["[INST]", "</s>", "[/INST] [INST]"]
+    
+    # Gemma models - use special tokens only
+    elif 'gemma' in model_lower:
+        return ["<start_of_turn>", "<end_of_turn>"]
+    
+    # TinyLlama - use aggressive stop tokens to prevent rambling and repetition
+    elif 'tinyllama' in model_lower or 'tiny-llama' in model_lower:
+        return [
+            "<|user|>", "<|system|>", "</s>",
+            "\n\n",  # Stop at double newlines
+            " #", "😊", "🤗", "🎉", "❤️",  # Stop at hashtags and emojis
+            "User:", "Assistant:",  # Stop at leaked template markers
+            "How about you?",  # Stop at repetitive questions
+            "I'm doing",  # Stop at repetitive statements
+        ]
+    
+    # Vicuna
+    elif 'vicuna' in model_lower:
+        return ["USER:", "ASSISTANT:", "</s>"]
+    
+    # Alpaca
+    elif 'alpaca' in model_lower:
+        return ["### Instruction:", "### Response:"]
+    
+    # Default generic stop tokens - use patterns that indicate new turn, not template markers
+    # Use double newline + marker to avoid matching the template itself
+    else:
+        return ["\n\nUser:", "\n\nAssistant:"]
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -156,11 +255,29 @@ async def start_server(config: VLLMConfig):
         
         # Set environment variables for CPU mode
         env = os.environ.copy()
+        
+        # Set HuggingFace token if provided (for gated models like Llama, Gemma)
+        if config.hf_token:
+            env['HF_TOKEN'] = config.hf_token
+            env['HUGGING_FACE_HUB_TOKEN'] = config.hf_token  # Alternative name
+            await broadcast_log("[WEBUI] HuggingFace token configured for gated models")
+        elif os.environ.get('HF_TOKEN'):
+            await broadcast_log("[WEBUI] Using HF_TOKEN from environment")
+        
         if config.use_cpu:
             env['VLLM_CPU_KVCACHE_SPACE'] = str(config.cpu_kvcache_space)
             env['VLLM_CPU_OMP_THREADS_BIND'] = config.cpu_omp_threads_bind
+            # Disable problematic CPU optimizations on Apple Silicon
+            env['VLLM_CPU_MOE_PREPACK'] = '0'
+            env['VLLM_CPU_SGL_KERNEL'] = '0'
+            # Force CPU target device
+            env['VLLM_TARGET_DEVICE'] = 'cpu'
+            # Enable V1 engine (required to be set explicitly in vLLM 0.11.0+)
+            env['VLLM_USE_V1'] = '1'
             logger.info(f"CPU Mode - VLLM_CPU_KVCACHE_SPACE={config.cpu_kvcache_space}, VLLM_CPU_OMP_THREADS_BIND={config.cpu_omp_threads_bind}")
             await broadcast_log(f"[WEBUI] CPU Settings - KV Cache: {config.cpu_kvcache_space}GB, Thread Binding: {config.cpu_omp_threads_bind}")
+            await broadcast_log(f"[WEBUI] CPU Optimizations disabled for Apple Silicon compatibility")
+            await broadcast_log(f"[WEBUI] Using V1 engine for CPU mode")
         else:
             await broadcast_log("[WEBUI] Using GPU mode")
         
@@ -174,11 +291,14 @@ async def start_server(config: VLLMConfig):
         ]
         
         # Add GPU-specific parameters only if not using CPU
+        # Note: vLLM auto-detects CPU platform, no --device flag needed
         if not config.use_cpu:
             cmd.extend([
                 "--tensor-parallel-size", str(config.tensor_parallel_size),
                 "--gpu-memory-utilization", str(config.gpu_memory_utilization),
             ])
+        else:
+            await broadcast_log("[WEBUI] CPU mode - vLLM will auto-detect CPU backend")
         
         # Set dtype (use bfloat16 for CPU as recommended)
         if config.use_cpu and config.dtype == "auto":
@@ -191,12 +311,26 @@ async def start_server(config: VLLMConfig):
         if not config.use_cpu:
             cmd.extend(["--load-format", config.load_format])
         
+        # Handle max_model_len and max_num_batched_tokens
+        # ALWAYS set both to prevent vLLM from auto-detecting large values
         if config.max_model_len:
-            cmd.extend(["--max-model-len", str(config.max_model_len)])
-            # Set max-num-batched-tokens to match max-model-len to avoid validation errors
-            # This is especially important for CPU mode
-            cmd.extend(["--max-num-batched-tokens", str(config.max_model_len)])
-            await broadcast_log(f"[WEBUI] Using user-specified max-model-len: {config.max_model_len}")
+            # User explicitly specified a value
+            max_len = config.max_model_len
+            cmd.extend(["--max-model-len", str(max_len)])
+            cmd.extend(["--max-num-batched-tokens", str(max_len)])
+            await broadcast_log(f"[WEBUI] Using user-specified max-model-len: {max_len}")
+        elif config.use_cpu:
+            # CPU mode: Use conservative defaults (2048)
+            max_len = 2048
+            cmd.extend(["--max-model-len", str(max_len)])
+            cmd.extend(["--max-num-batched-tokens", str(max_len)])
+            await broadcast_log(f"[WEBUI] Using default max-model-len for CPU: {max_len}")
+        else:
+            # GPU mode: Use reasonable default (8192) instead of letting vLLM auto-detect
+            max_len = 8192
+            cmd.extend(["--max-model-len", str(max_len)])
+            cmd.extend(["--max-num-batched-tokens", str(max_len)])
+            await broadcast_log(f"[WEBUI] Using default max-model-len for GPU: {max_len}")
         
         if config.trust_remote_code:
             cmd.append("--trust-remote-code")
@@ -209,6 +343,17 @@ async def start_server(config: VLLMConfig):
         
         if config.enable_prefix_caching:
             cmd.append("--enable-prefix-caching")
+        
+        # Add chat template for models that don't have one (required for transformers v4.44+)
+        # Use custom template if provided, otherwise auto-detect
+        if config.custom_chat_template:
+            chat_template = config.custom_chat_template
+            await broadcast_log(f"[WEBUI] Using CUSTOM chat template")
+        else:
+            chat_template = get_chat_template_for_model(config.model)
+            await broadcast_log(f"[WEBUI] Using auto-detected chat template for: {config.model}")
+        
+        cmd.extend(["--chat-template", chat_template])
         
         logger.info(f"Starting vLLM with command: {' '.join(cmd)}")
         await broadcast_log(f"[WEBUI] Command: {' '.join(cmd)}")
@@ -383,12 +528,22 @@ async def chat(request: ChatRequest):
         
         url = f"http://{current_config.host}:{current_config.port}/v1/chat/completions"
         
+        # Get stop tokens - use custom if provided, otherwise auto-detect
+        if current_config.custom_stop_tokens:
+            stop_tokens = current_config.custom_stop_tokens
+            logger.info(f"Using CUSTOM stop tokens: {stop_tokens}")
+        else:
+            stop_tokens = get_stop_tokens_for_model(current_config.model)
+            logger.info(f"Using auto-detected stop tokens for {current_config.model}: {stop_tokens}")
+        
         payload = {
             "model": current_config.model,
             "messages": [{"role": m.role, "content": m.content} for m in request.messages],
             "temperature": request.temperature,
             "max_tokens": request.max_tokens,
-            "stream": request.stream
+            "stream": request.stream,
+            # Stop tokens to prevent the model from continuing beyond the assistant's response
+            "stop": stop_tokens
         }
         
         async def generate_stream():
@@ -483,14 +638,18 @@ async def completion(request: CompletionRequest):
 async def list_models():
     """Get list of common models"""
     common_models = [
-        {"name": "facebook/opt-125m", "size": "125M", "description": "Small test model"},
-        {"name": "facebook/opt-350m", "size": "350M", "description": "Small test model"},
-        {"name": "facebook/opt-1.3b", "size": "1.3B", "description": "Medium model"},
-        {"name": "facebook/opt-2.7b", "size": "2.7B", "description": "Medium model"},
-        {"name": "meta-llama/Llama-2-7b-chat-hf", "size": "7B", "description": "Llama 2 Chat"},
-        {"name": "meta-llama/Llama-2-13b-chat-hf", "size": "13B", "description": "Llama 2 Chat"},
-        {"name": "mistralai/Mistral-7B-Instruct-v0.2", "size": "7B", "description": "Mistral Instruct"},
-        {"name": "codellama/CodeLlama-7b-Instruct-hf", "size": "7B", "description": "Code Llama"},
+        # CPU-optimized models (recommended for macOS)
+        {"name": "facebook/opt-125m", "size": "125M", "description": "Tiny test model (fastest)", "cpu_friendly": True},
+        {"name": "TinyLlama/TinyLlama-1.1B-Chat-v1.0", "size": "1.1B", "description": "Compact chat model (CPU-friendly)", "cpu_friendly": True},
+        {"name": "meta-llama/Llama-3.2-1B", "size": "1B", "description": "Llama 3.2 1B (CPU-friendly, gated)", "cpu_friendly": True, "gated": True},
+        {"name": "google/gemma-2-2b", "size": "2B", "description": "Gemma 2 2B (CPU-friendly, gated)", "cpu_friendly": True, "gated": True},
+        
+        # Larger models (may be slow on CPU)
+        {"name": "facebook/opt-1.3b", "size": "1.3B", "description": "OPT 1.3B", "cpu_friendly": True},
+        {"name": "facebook/opt-2.7b", "size": "2.7B", "description": "OPT 2.7B", "cpu_friendly": False},
+        {"name": "meta-llama/Llama-2-7b-chat-hf", "size": "7B", "description": "Llama 2 Chat (slow on CPU, gated)", "cpu_friendly": False, "gated": True},
+        {"name": "mistralai/Mistral-7B-Instruct-v0.2", "size": "7B", "description": "Mistral Instruct (slow on CPU)", "cpu_friendly": False},
+        {"name": "codellama/CodeLlama-7b-Instruct-hf", "size": "7B", "description": "Code Llama (slow on CPU)", "cpu_friendly": False},
     ]
     
     return {"models": common_models}
@@ -587,11 +746,18 @@ async def run_benchmark(config: BenchmarkConfig, server_config: VLLMConfig):
                 request_start = time.time()
                 
                 try:
+                    # Get stop tokens - use custom if provided, otherwise auto-detect
+                    if server_config.custom_stop_tokens:
+                        stop_tokens = server_config.custom_stop_tokens
+                    else:
+                        stop_tokens = get_stop_tokens_for_model(server_config.model)
+                    
                     payload = {
                         "model": server_config.model,
                         "messages": [{"role": "user", "content": prompt_text}],
                         "max_tokens": config.output_tokens,
-                        "temperature": 0.7
+                        "temperature": 0.7,
+                        "stop": stop_tokens
                     }
                     
                     async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=60)) as response:

@@ -35,8 +35,8 @@ echo "  VLLM_CPU_KVCACHE_SPACE=${VLLM_CPU_KVCACHE_SPACE}"
 echo "  VLLM_CPU_OMP_THREADS_BIND=${VLLM_CPU_OMP_THREADS_BIND}"
 echo ""
 
-# Default model
-MODEL="${1:-facebook/opt-125m}"
+# Default model (TinyLlama is better than OPT-125m for actual use)
+MODEL="${1:-TinyLlama/TinyLlama-1.1B-Chat-v1.0}"
 PORT="${2:-8000}"
 
 echo "🤖 Model: ${MODEL}"
@@ -46,11 +46,14 @@ echo "Starting server..."
 echo ""
 
 # Run vLLM server with CPU-compatible settings
+# Note: vLLM auto-detects CPU platform, no --device flag needed
+# Chat template is required for transformers v4.44+ compatibility
 python -m vllm.entrypoints.openai.api_server \
   --model "${MODEL}" \
   --host 0.0.0.0 \
   --port "${PORT}" \
-  --dtype bfloat16
+  --dtype bfloat16 \
+  --chat-template "{% for message in messages %}{% if message['role'] == 'user' %}User: {{ message['content'] }}{% elif message['role'] == 'assistant' %}\nAssistant: {{ message['content'] }}{% elif message['role'] == 'system' %}{{ message['content'] }}\n{% endif %}\n{% endfor %}Assistant:"
 
 # Note: Removed GPU-specific flags:
 # - --tensor-parallel-size

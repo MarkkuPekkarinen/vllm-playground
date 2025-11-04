@@ -51,12 +51,43 @@ body {
     gap: 15px;
 }
 
+.logo-container {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.logo {
+    height: 45px;
+    width: auto;
+    max-width: 200px;
+    object-fit: contain;
+    display: block;
+    filter: brightness(1.1);
+}
+
+.logo:hover {
+    filter: brightness(1.2);
+    transition: filter 0.2s ease;
+}
+
 .header h1 {
     font-size: 2rem;
     background: linear-gradient(135deg, #60a5fa 0%, #c084fc 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
+    margin: 0;
+}
+
+/* Hide logo text when logo image loads */
+.logo-text {
+    display: none;
+}
+
+/* Show logo text only if image fails to load */
+.logo[style*="display: none"] ~ h1 .logo-text {
+    display: inline;
 }
 
 .status-indicator {
@@ -107,11 +138,16 @@ body {
 .chat-section {
     display: flex;
     flex-direction: column;
+    height: calc(100vh - 160px);
+    max-height: calc(100vh - 160px);
 }
 
 .chat-section .panel {
-    flex: 1;
+    flex: 1 1 auto;
     margin-bottom: 0;
+    overflow: hidden;
+    height: auto;
+    max-height: none;
 }
 
 .chat-metrics-below {
@@ -122,8 +158,12 @@ body {
 .resizable {
     position: relative;
     min-width: 200px;
-    min-height: 200px;
     flex-shrink: 0;
+}
+
+.resizable:not(.chat-section) {
+    min-height: 200px;
+    max-height: calc(100vh - 160px);
 }
 
 /* Resize handles */
@@ -146,13 +186,14 @@ body {
     width: 4px;
     height: 100%;
     position: absolute;
-    right: 0;
+    right: -12px;
     top: 0;
     cursor: col-resize;
 }
 
 .resize-handle-vertical:hover {
     width: 6px;
+    right: -13px;
 }
 
 /* Horizontal resize handle (between main and metrics) */
@@ -230,9 +271,11 @@ body {
     padding: 25px;
     box-shadow: var(--shadow);
     height: calc(100vh - 160px);
+    max-height: calc(100vh - 160px);
     display: flex;
     flex-direction: column;
     margin: 0 10px;
+    overflow: hidden;
 }
 
 .panel h2 {
@@ -392,6 +435,63 @@ body {
     overflow: hidden;
 }
 
+
+/* Template Settings Section */
+.template-settings-section {
+    margin-top: 25px;
+    margin-bottom: 20px;
+    padding: 15px;
+    background: var(--bg-primary);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+
+.template-settings-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.2s;
+}
+
+.template-settings-header:hover {
+    background: var(--bg-secondary);
+    padding: 8px;
+    margin: -8px;
+    border-radius: 6px;
+}
+
+.template-settings-header h3 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.toggle-icon {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    transition: transform 0.3s;
+}
+
+.toggle-icon.open {
+    transform: rotate(180deg);
+}
+
+.template-settings-content {
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid var(--border-color);
+}
+
+.template-textarea {
+    font-family: 'Monaco', 'Courier New', monospace;
+    font-size: 0.85rem;
+    line-height: 1.6;
+    resize: vertical;
+    min-height: 80px;
+}
 
 /* Command Preview Section */
 .command-preview-section {
@@ -566,13 +666,14 @@ body {
 }
 
 .chat-container {
-    flex: 1;
+    flex: 1 1 auto;
     overflow-y: auto;
     margin-bottom: 20px;
     padding: 15px;
     background: var(--bg-primary);
     border-radius: 8px;
-    min-height: 300px;
+    min-height: 200px;
+    max-height: calc(100vh - 500px);
 }
 
 .chat-message {
@@ -617,7 +718,54 @@ body {
 
 .chat-input-area {
     margin-top: auto;
+    flex-shrink: 0;
 }
+
+/* System Prompt Section */
+.system-prompt-section {
+    margin-bottom: 15px;
+    padding: 12px;
+    background: var(--bg-primary);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+
+.system-prompt-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.system-prompt-header label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+.system-prompt-input {
+    width: 100%;
+    padding: 10px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.9rem;
+    resize: vertical;
+    min-height: 50px;
+}
+
+.system-prompt-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+
+.system-prompt-input::placeholder {
+    color: var(--text-secondary);
+    opacity: 0.6;
+}
+
 
 .generation-params {
     display: grid;
@@ -689,7 +837,7 @@ body {
 
 /* Logs Section */
 .logs-container {
-    flex: 1;
+    flex: 1 1 auto;
     overflow-y: auto;
     padding: 15px;
     background: var(--bg-primary);
@@ -697,6 +845,7 @@ body {
     font-family: 'Monaco', 'Courier New', monospace;
     font-size: 0.85rem;
     line-height: 1.5;
+    max-height: calc(100vh - 350px);
 }
 
 .log-entry {
@@ -729,6 +878,7 @@ body {
     margin-top: 15px;
     padding-top: 15px;
     border-top: 1px solid var(--border-color);
+    flex-shrink: 0;
 }
 
 .logs-footer label {
@@ -806,6 +956,7 @@ body {
     padding: 15px;
     margin: 10px;
     box-shadow: var(--shadow);
+    flex-shrink: 0;
 }
 
 .chat-metrics-below .panel-header {
