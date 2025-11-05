@@ -14,6 +14,10 @@ class VLLMWebUI {
         this.currentResizer = null;
         this.resizeDirection = null;
         
+        // Template edit timeouts
+        this.stopTokensEditTimeout = null;
+        this.chatTemplateEditTimeout = null;
+        
         this.init();
     }
 
@@ -115,6 +119,9 @@ class VLLMWebUI {
         // Update command preview initially
         this.updateCommandPreview();
         
+        // Initialize chat template for default model (silent mode - no notification)
+        this.updateTemplateForModel(true);
+        
         // Connect WebSocket for logs
         this.connectWebSocket();
         
@@ -193,6 +200,10 @@ class VLLMWebUI {
         this.elements.resetTemplateBtn.addEventListener('click', () => this.resetTemplate());
         this.elements.modelSelect.addEventListener('change', () => this.updateTemplateForModel());
         this.elements.customModel.addEventListener('blur', () => this.updateTemplateForModel());
+        
+        // Visual feedback when stop tokens are edited
+        this.elements.stopTokens.addEventListener('input', () => this.handleStopTokensEdit());
+        this.elements.chatTemplate.addEventListener('input', () => this.handleChatTemplateEdit());
     }
 
     connectWebSocket() {
@@ -459,6 +470,12 @@ class VLLMWebUI {
         let usageData = null;
         
         try {
+            // Get current stop tokens from UI (if user edited them)
+            const stopTokensInput = this.elements.stopTokens.value.trim();
+            const stopTokens = stopTokensInput 
+                ? stopTokensInput.split(',').map(t => t.trim()).filter(t => t.length > 0)
+                : null;
+            
             // Use streaming
             const response = await fetch('/api/chat', {
                 method: 'POST',
@@ -469,7 +486,8 @@ class VLLMWebUI {
                     messages: this.chatHistory,
                     temperature: parseFloat(this.elements.temperature.value),
                     max_tokens: parseInt(this.elements.maxTokens.value),
-                    stream: true
+                    stream: true,
+                    stop_tokens: stopTokens  // Send current stop tokens from UI
                 })
             });
             
@@ -589,6 +607,7 @@ class VLLMWebUI {
             console.log('Full usage data:', usageData);
             
             // Fetch additional metrics from vLLM's metrics endpoint
+            let metricsAge = null;
             try {
                 const metricsResponse = await fetch('/api/vllm/metrics');
                 console.log('Metrics response status:', metricsResponse.status);
@@ -596,6 +615,17 @@ class VLLMWebUI {
                 if (metricsResponse.ok) {
                     const vllmMetrics = await metricsResponse.json();
                     console.log('✓ Fetched vLLM metrics:', vllmMetrics);
+                    
+                    // Check how fresh the metrics are
+                    if (vllmMetrics.metrics_age_seconds !== undefined) {
+                        metricsAge = vllmMetrics.metrics_age_seconds;
+                        console.log(`  → Metrics age: ${metricsAge}s`);
+                        
+                        // Warn if metrics are stale (older than 30 seconds)
+                        if (metricsAge > 30) {
+                            console.warn(`  ⚠️ Metrics are stale (${metricsAge}s old) - may not reflect last response`);
+                        }
+                    }
                     
                     // Update metrics if available
                     if (vllmMetrics.kv_cache_usage_perc !== undefined) {
@@ -618,14 +648,15 @@ class VLLMWebUI {
                 console.warn('Could not fetch vLLM metrics:', e);
             }
             
-            console.log('Metrics:', {
+            console.log('Final Metrics:', {
                 promptTokens: estimatedPromptTokens,
                 completionTokens: completionTokens,
                 totalTokens: totalTokens,
                 timeTaken: timeTaken,
                 timeToFirstToken: timeToFirstToken,
                 kvCacheUsage: kvCacheUsage,
-                prefixCacheHitRate: prefixCacheHitRate
+                prefixCacheHitRate: prefixCacheHitRate,
+                metricsAge: metricsAge
             });
             
             this.updateChatMetrics({
@@ -635,7 +666,8 @@ class VLLMWebUI {
                 timeTaken: timeTaken,
                 timeToFirstToken: timeToFirstToken,
                 kvCacheUsage: kvCacheUsage,
-                prefixCacheHitRate: prefixCacheHitRate
+                prefixCacheHitRate: prefixCacheHitRate,
+                metricsAge: metricsAge
             });
             
         } catch (error) {
@@ -887,9 +919,21 @@ class VLLMWebUI {
                     // Already a percentage
                     percentage = metrics.kvCacheUsage.toFixed(1);
                 }
-                kvCacheUsageEl.textContent = `${percentage}%`;
+                
+                // Add staleness indicator if metrics are old
+                if (metrics.metricsAge !== undefined && metrics.metricsAge > 30) {
+                    kvCacheUsageEl.textContent = `${percentage}% ⚠️`;
+                    kvCacheUsageEl.title = `Stale data (${metrics.metricsAge.toFixed(0)}s old) - may not reflect last response`;
+                } else if (metrics.metricsAge !== undefined) {
+                    kvCacheUsageEl.textContent = `${percentage}%`;
+                    kvCacheUsageEl.title = `Updated ${metrics.metricsAge.toFixed(1)}s ago`;
+                } else {
+                    kvCacheUsageEl.textContent = `${percentage}%`;
+                    kvCacheUsageEl.title = '';
+                }
             } else {
                 kvCacheUsageEl.textContent = 'N/A';
+                kvCacheUsageEl.title = 'No data available';
             }
             kvCacheUsageEl.classList.add('updated');
             setTimeout(() => kvCacheUsageEl.classList.remove('updated'), 500);
@@ -907,9 +951,21 @@ class VLLMWebUI {
                     // Already a percentage
                     percentage = metrics.prefixCacheHitRate.toFixed(1);
                 }
-                prefixCacheHitEl.textContent = `${percentage}%`;
+                
+                // Add staleness indicator if metrics are old
+                if (metrics.metricsAge !== undefined && metrics.metricsAge > 30) {
+                    prefixCacheHitEl.textContent = `${percentage}% ⚠️`;
+                    prefixCacheHitEl.title = `Stale data (${metrics.metricsAge.toFixed(0)}s old) - may not reflect last response`;
+                } else if (metrics.metricsAge !== undefined) {
+                    prefixCacheHitEl.textContent = `${percentage}%`;
+                    prefixCacheHitEl.title = `Updated ${metrics.metricsAge.toFixed(1)}s ago`;
+                } else {
+                    prefixCacheHitEl.textContent = `${percentage}%`;
+                    prefixCacheHitEl.title = '';
+                }
             } else {
                 prefixCacheHitEl.textContent = 'N/A';
+                prefixCacheHitEl.title = 'No data available';
             }
             prefixCacheHitEl.classList.add('updated');
             setTimeout(() => prefixCacheHitEl.classList.remove('updated'), 500);
@@ -1169,27 +1225,96 @@ class VLLMWebUI {
         }
     }
     
-    updateTemplateForModel() {
+    updateTemplateForModel(silent = false) {
         const model = this.elements.customModel.value.trim() || this.elements.modelSelect.value;
         const template = this.getTemplateForModel(model);
         const stopTokens = this.getStopTokensForModel(model);
         
+        // Update the template and stop tokens fields
         this.elements.chatTemplate.value = template;
         this.elements.stopTokens.value = stopTokens.join(', ');
         
         console.log(`Template updated for model: ${model}`);
+        
+        // Only show feedback if not silent (i.e., when user actively changes model)
+        if (!silent) {
+            // Show visual feedback that template was updated
+            this.showNotification(`Chat template updated for: ${model.split('/').pop()}`, 'success');
+            
+            // Add visual highlight to template fields briefly
+            this.elements.chatTemplate.style.transition = 'background-color 0.3s ease';
+            this.elements.stopTokens.style.transition = 'background-color 0.3s ease';
+            this.elements.chatTemplate.style.backgroundColor = '#10b98120';
+            this.elements.stopTokens.style.backgroundColor = '#10b98120';
+            
+            setTimeout(() => {
+                this.elements.chatTemplate.style.backgroundColor = '';
+                this.elements.stopTokens.style.backgroundColor = '';
+            }, 1000);
+            
+            // Warn if server is currently running
+            if (this.serverRunning) {
+                this.showNotification('⚠️ Server is running! Restart to apply new template', 'warning');
+                this.addLog('[WARNING] Model changed while server is running. Restart server to apply new chat template.', 'warning');
+            }
+        }
     }
     
     resetTemplate() {
-        this.updateTemplateForModel();
+        this.updateTemplateForModel(true);  // Silent mode, we'll show our own notification
         this.showNotification('Template reset to auto-detected values', 'success');
+    }
+    
+    handleStopTokensEdit() {
+        // Clear any existing timeout
+        if (this.stopTokensEditTimeout) {
+            clearTimeout(this.stopTokensEditTimeout);
+        }
+        
+        // Add visual feedback
+        this.elements.stopTokens.style.borderColor = '#10b981';
+        
+        // Show brief feedback after user stops typing
+        this.stopTokensEditTimeout = setTimeout(() => {
+            this.elements.stopTokens.style.borderColor = '';
+            
+            // Only show notification if server is running (when it matters)
+            if (this.serverRunning) {
+                console.log('Stop tokens edited - will be used in next chat');
+            }
+        }, 1000);
+    }
+    
+    handleChatTemplateEdit() {
+        // Clear any existing timeout
+        if (this.chatTemplateEditTimeout) {
+            clearTimeout(this.chatTemplateEditTimeout);
+        }
+        
+        // Add visual feedback (warning color since it requires restart)
+        this.elements.chatTemplate.style.borderColor = '#f59e0b';
+        
+        // Show feedback after user stops typing
+        this.chatTemplateEditTimeout = setTimeout(() => {
+            this.elements.chatTemplate.style.borderColor = '';
+            
+            // Show warning if server is running
+            if (this.serverRunning) {
+                this.showNotification('⚠️ Chat template changed - restart server to apply', 'warning');
+            }
+        }, 1500);
     }
     
     getTemplateForModel(modelName) {
         const model = modelName.toLowerCase();
         
-        // Llama 2/3 models
-        if (model.includes('llama-2') || model.includes('llama-3')) {
+        // Llama 3/3.1/3.2 models (use new format with special tokens)
+        if (model.includes('llama-3') && (model.includes('llama-3.1') || model.includes('llama-3.2') || model.includes('llama-3-'))) {
+            return "{% for message in messages %}{% if loop.first and message['role'] != 'system' %}<|begin_of_text|>{% endif %}{% if message['role'] == 'system' %}<|start_header_id|>system<|end_header_id|>\\n\\n{{ message['content'] }}<|eot_id|>{% endif %}{% if message['role'] == 'user' %}<|start_header_id|>user<|end_header_id|>\\n\\n{{ message['content'] }}<|eot_id|>{% endif %}{% if message['role'] == 'assistant' %}<|start_header_id|>assistant<|end_header_id|>\\n\\n{{ message['content'] }}<|eot_id|>{% endif %}{% endfor %}{% if messages[-1]['role'] != 'assistant' %}<|start_header_id|>assistant<|end_header_id|>\\n\\n{% endif %}";
+        }
+        
+        // Llama 2 models (use old format with [INST] tags)
+        else if (model.includes('llama-2')) {
             return "{% for message in messages %}{% if message['role'] == 'system' %}<<SYS>>\\n{{ message['content'] }}\\n<</SYS>>\\n\\n{% endif %}{% if message['role'] == 'user' %}[INST] {{ message['content'] }} [/INST]{% endif %}{% if message['role'] == 'assistant' %} {{ message['content'] }}</s>{% endif %}{% endfor %}";
         }
         
@@ -1224,7 +1349,13 @@ class VLLMWebUI {
         }
         
         // OPT and generic
+        else if (model.includes('opt')) {
+            return "{% for message in messages %}{% if message['role'] == 'user' %}User: {{ message['content'] }}\\n{% elif message['role'] == 'assistant' %}Assistant: {{ message['content'] }}\\n{% elif message['role'] == 'system' %}{{ message['content'] }}\\n{% endif %}{% endfor %}Assistant:";
+        }
+        
+        // Default generic template for unknown models
         else {
+            console.log('Using generic chat template for model:', modelName);
             return "{% for message in messages %}{% if message['role'] == 'user' %}User: {{ message['content'] }}\\n{% elif message['role'] == 'assistant' %}Assistant: {{ message['content'] }}\\n{% elif message['role'] == 'system' %}{{ message['content'] }}\\n{% endif %}{% endfor %}Assistant:";
         }
     }
@@ -1232,22 +1363,27 @@ class VLLMWebUI {
     getStopTokensForModel(modelName) {
         const model = modelName.toLowerCase();
         
-        // Llama models
-        if (model.includes('llama')) {
+        // Llama 3/3.1/3.2 models - use new special tokens
+        if (model.includes('llama-3') && (model.includes('llama-3.1') || model.includes('llama-3.2') || model.includes('llama-3-'))) {
+            return ["<|eot_id|>", "<|end_of_text|>", "<|start_header_id|>"];
+        }
+        
+        // Llama 2 models - use old special tokens
+        else if (model.includes('llama-2')) {
             return ["[INST]", "</s>", "<s>", "[/INST] [INST]"];
         }
         
-        // Mistral models
+        // Mistral models - use special tokens only
         else if (model.includes('mistral') || model.includes('mixtral')) {
             return ["[INST]", "</s>", "[/INST] [INST]"];
         }
         
-        // Gemma models
+        // Gemma models - use special tokens only
         else if (model.includes('gemma')) {
             return ["<start_of_turn>", "<end_of_turn>"];
         }
         
-        // TinyLlama - more aggressive stop tokens to prevent rambling
+        // TinyLlama - use aggressive stop tokens to prevent rambling and repetition
         else if (model.includes('tinyllama') || model.includes('tiny-llama')) {
             return ["<|user|>", "<|system|>", "</s>", "\\n\\n", " #", "😊", "🤗", "🎉", "❤️", "User:", "Assistant:", "How about you?", "I'm doing"];
         }
@@ -1262,7 +1398,12 @@ class VLLMWebUI {
             return ["### Instruction:", "### Response:"];
         }
         
-        // Default generic stop tokens
+        // CodeLlama
+        else if (model.includes('codellama') || model.includes('code-llama')) {
+            return ["[INST]", "</s>", "<s>", "[/INST] [INST]"];
+        }
+        
+        // Default generic stop tokens - use patterns that indicate new turn
         else {
             return ["\\n\\nUser:", "\\n\\nAssistant:"];
         }

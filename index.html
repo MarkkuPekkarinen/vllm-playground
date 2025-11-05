@@ -145,15 +145,15 @@
                         </div>
                         <div class="template-settings-content" id="template-settings-content" style="display: none;">
                             <div class="form-group">
-                                <label for="chat-template">Chat Template (Jinja2)</label>
+                                <label for="chat-template">Chat Template (Jinja2) <span style="color: #f59e0b; font-size: 0.85em;">⚠️ Requires Restart</span></label>
                                 <textarea id="chat-template" class="form-control template-textarea" rows="4" spellcheck="false" placeholder="Auto-detected based on model..."></textarea>
-                                <small class="form-help">Auto-detected for known models. Edit to customize. Uses Jinja2 syntax.</small>
+                                <small class="form-help">Auto-detected for known models. Edit to customize. Uses Jinja2 syntax. <strong>Note:</strong> Chat template is baked into the vLLM server at startup - restart server to apply changes.</small>
                             </div>
                             
                             <div class="form-group">
-                                <label for="stop-tokens">Stop Tokens (comma-separated)</label>
+                                <label for="stop-tokens">Stop Tokens (comma-separated) <span style="color: #10b981; font-size: 0.85em;">✓ Live Edit</span></label>
                                 <input type="text" id="stop-tokens" class="form-control" placeholder="Auto-detected based on model...">
-                                <small class="form-help">Tokens that signal end of response. Example: &lt;|user|&gt;, &lt;|system|&gt;, &lt;/s&gt;</small>
+                                <small class="form-help">Tokens that signal end of response. Example: &lt;|user|&gt;, &lt;|system|&gt;, &lt;/s&gt;. <strong>Changes take effect immediately</strong> on your next chat message.</small>
                             </div>
                             
                             <button id="reset-template-btn" class="btn btn-secondary btn-sm" style="width: 100%; margin-top: 10px;">Reset to Auto-Detected</button>

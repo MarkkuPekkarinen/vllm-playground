@@ -37,6 +37,7 @@ vllm_process: Optional[subprocess.Popen] = None
 log_queue: asyncio.Queue = asyncio.Queue()
 websocket_connections: List[WebSocket] = []
 latest_vllm_metrics: Dict[str, Any] = {}  # Store latest metrics from logs
+metrics_timestamp: Optional[datetime] = None  # Track when metrics were last updated
 
 
 class VLLMConfig(BaseModel):
@@ -120,8 +121,12 @@ def get_chat_template_for_model(model_name: str) -> str:
     """
     model_lower = model_name.lower()
     
-    # Llama 2/3 models
-    if 'llama-2' in model_lower or 'llama-3' in model_lower:
+    # Llama 3/3.1/3.2 models (use new format with special tokens)
+    if 'llama-3' in model_lower and ('llama-3.1' in model_lower or 'llama-3.2' in model_lower or 'llama-3-' in model_lower):
+        return "{% for message in messages %}{% if loop.first and message['role'] != 'system' %}<|begin_of_text|>{% endif %}{% if message['role'] == 'system' %}<|start_header_id|>system<|end_header_id|>\\n\\n{{ message['content'] }}<|eot_id|>{% endif %}{% if message['role'] == 'user' %}<|start_header_id|>user<|end_header_id|>\\n\\n{{ message['content'] }}<|eot_id|>{% endif %}{% if message['role'] == 'assistant' %}<|start_header_id|>assistant<|end_header_id|>\\n\\n{{ message['content'] }}<|eot_id|>{% endif %}{% endfor %}{% if messages[-1]['role'] != 'assistant' %}<|start_header_id|>assistant<|end_header_id|>\\n\\n{% endif %}"
+    
+    # Llama 2 models (use old format with [INST] tags)
+    elif 'llama-2' in model_lower:
         return "{% for message in messages %}{% if message['role'] == 'system' %}<<SYS>>\\n{{ message['content'] }}\\n<</SYS>>\\n\\n{% endif %}{% if message['role'] == 'user' %}[INST] {{ message['content'] }} [/INST]{% endif %}{% if message['role'] == 'assistant' %} {{ message['content'] }}</s>{% endif %}{% endfor %}"
     
     # Mistral models
@@ -165,8 +170,12 @@ def get_stop_tokens_for_model(model_name: str) -> List[str]:
     """
     model_lower = model_name.lower()
     
-    # Llama models - use special tokens only
-    if 'llama' in model_lower:
+    # Llama 3/3.1/3.2 models - use new special tokens
+    if 'llama-3' in model_lower and ('llama-3.1' in model_lower or 'llama-3.2' in model_lower or 'llama-3-' in model_lower):
+        return ["<|eot_id|>", "<|end_of_text|>", "<|start_header_id|>"]
+    
+    # Llama 2 models - use old special tokens
+    elif 'llama-2' in model_lower:
         return ["[INST]", "</s>", "<s>", "[/INST] [INST]"]
     
     # Mistral models - use special tokens only
@@ -431,7 +440,7 @@ async def read_logs():
         # Use a loop to continuously read output
         loop = asyncio.get_event_loop()
         
-        while vllm_process.poll() is None:
+        while vllm_process is not None and vllm_process.poll() is None:
             # Read line in a non-blocking way
             try:
                 line = await loop.run_in_executor(None, vllm_process.stdout.readline)
@@ -449,19 +458,20 @@ async def read_logs():
                 await asyncio.sleep(0.1)
         
         # Process has ended - read any remaining output
-        remaining_output = vllm_process.stdout.read()
-        if remaining_output:
-            for line in remaining_output.splitlines():
-                line = line.strip()
-                if line:
-                    await broadcast_log(line)
-        
-        # Log process exit
-        return_code = vllm_process.returncode
-        if return_code == 0:
-            await broadcast_log(f"[WEBUI] vLLM process ended normally (exit code: {return_code})")
-        else:
-            await broadcast_log(f"[WEBUI] vLLM process ended with code: {return_code}")
+        if vllm_process is not None:
+            remaining_output = vllm_process.stdout.read()
+            if remaining_output:
+                for line in remaining_output.splitlines():
+                    line = line.strip()
+                    if line:
+                        await broadcast_log(line)
+            
+            # Log process exit
+            return_code = vllm_process.returncode
+            if return_code == 0:
+                await broadcast_log(f"[WEBUI] vLLM process ended normally (exit code: {return_code})")
+            else:
+                await broadcast_log(f"[WEBUI] vLLM process ended with code: {return_code}")
     
     except Exception as e:
         logger.error(f"Error reading logs: {e}")
@@ -470,13 +480,15 @@ async def read_logs():
 
 async def broadcast_log(message: str):
     """Broadcast log message to all connected websockets"""
-    global latest_vllm_metrics
+    global latest_vllm_metrics, metrics_timestamp
     
     if not message:
         return
     
     # Parse metrics from log messages with more flexible patterns
     import re
+    
+    metrics_updated = False  # Track if we updated any metrics in this log line
     
     # Try various patterns for KV cache usage
     # Examples: "GPU KV cache usage: 0.3%", "KV cache usage: 0.3%", "cache usage: 0.3%"
@@ -486,6 +498,7 @@ async def broadcast_log(message: str):
         if match:
             cache_usage = float(match.group(1))
             latest_vllm_metrics['kv_cache_usage_perc'] = cache_usage
+            metrics_updated = True
             logger.info(f"✓ Captured KV cache usage: {cache_usage}% from: {message[:100]}")
         else:
             logger.debug(f"Failed to parse cache usage from: {message[:100]}")
@@ -498,6 +511,7 @@ async def broadcast_log(message: str):
         if match:
             hit_rate = float(match.group(1))
             latest_vllm_metrics['prefix_cache_hit_rate'] = hit_rate
+            metrics_updated = True
             logger.info(f"✓ Captured prefix cache hit rate: {hit_rate}% from: {message[:100]}")
         else:
             logger.debug(f"Failed to parse hit rate from: {message[:100]}")
@@ -508,6 +522,7 @@ async def broadcast_log(message: str):
         if match:
             prompt_throughput = float(match.group(1))
             latest_vllm_metrics['avg_prompt_throughput'] = prompt_throughput
+            metrics_updated = True
             logger.info(f"✓ Captured prompt throughput: {prompt_throughput}")
     
     # Try to parse avg generation throughput
@@ -516,7 +531,14 @@ async def broadcast_log(message: str):
         if match:
             generation_throughput = float(match.group(1))
             latest_vllm_metrics['avg_generation_throughput'] = generation_throughput
+            metrics_updated = True
             logger.info(f"✓ Captured generation throughput: {generation_throughput}")
+    
+    # Update timestamp if we captured any metrics
+    if metrics_updated:
+        metrics_timestamp = datetime.now()
+        latest_vllm_metrics['timestamp'] = metrics_timestamp.isoformat()
+        logger.info(f"📊 Metrics updated at: {metrics_timestamp.strftime('%H:%M:%S')}")
     
     disconnected = []
     for ws in websocket_connections:
@@ -558,8 +580,17 @@ async def websocket_logs(websocket: WebSocket):
             websocket_connections.remove(websocket)
 
 
+class ChatRequestWithStopTokens(BaseModel):
+    """Chat request structure with optional stop tokens override"""
+    messages: List[ChatMessage]
+    temperature: float = 0.7
+    max_tokens: int = 512
+    stream: bool = True
+    stop_tokens: Optional[List[str]] = None  # Allow overriding stop tokens per request
+
+
 @app.post("/api/chat")
-async def chat(request: ChatRequest):
+async def chat(request: ChatRequestWithStopTokens):
     """Proxy chat requests to vLLM server"""
     global current_config
     
@@ -574,10 +605,13 @@ async def chat(request: ChatRequest):
         
         url = f"http://{current_config.host}:{current_config.port}/v1/chat/completions"
         
-        # Get stop tokens - use custom if provided, otherwise auto-detect
-        if current_config.custom_stop_tokens:
+        # Get stop tokens - prioritize request override, then custom config, then auto-detect
+        if request.stop_tokens:
+            stop_tokens = request.stop_tokens
+            logger.info(f"Using stop tokens from chat request: {stop_tokens}")
+        elif current_config.custom_stop_tokens:
             stop_tokens = current_config.custom_stop_tokens
-            logger.info(f"Using CUSTOM stop tokens: {stop_tokens}")
+            logger.info(f"Using custom stop tokens from config: {stop_tokens}")
         else:
             stop_tokens = get_stop_tokens_for_model(current_config.model)
             logger.info(f"Using auto-detected stop tokens for {current_config.model}: {stop_tokens}")
@@ -704,7 +738,7 @@ async def list_models():
 @app.get("/api/vllm/metrics")
 async def get_vllm_metrics():
     """Get vLLM server metrics including KV cache and prefix cache stats"""
-    global current_config, vllm_process, latest_vllm_metrics
+    global current_config, vllm_process, latest_vllm_metrics, metrics_timestamp
     
     if vllm_process is None or vllm_process.poll() is not None:
         return JSONResponse(
@@ -712,12 +746,20 @@ async def get_vllm_metrics():
             content={"error": "vLLM server is not running"}
         )
     
-    # Log what we have for debugging
-    logger.info(f"Returning metrics: {latest_vllm_metrics}")
+    # Calculate how fresh the metrics are
+    metrics_age_seconds = None
+    if metrics_timestamp:
+        metrics_age_seconds = (datetime.now() - metrics_timestamp).total_seconds()
+        logger.info(f"Returning metrics (age: {metrics_age_seconds:.1f}s): {latest_vllm_metrics}")
+    else:
+        logger.info(f"Returning metrics (no timestamp): {latest_vllm_metrics}")
     
-    # Return metrics parsed from logs
+    # Return metrics parsed from logs with freshness indicator
     if latest_vllm_metrics:
-        return latest_vllm_metrics
+        result = latest_vllm_metrics.copy()
+        if metrics_age_seconds is not None:
+            result['metrics_age_seconds'] = round(metrics_age_seconds, 1)
+        return result
     
     # If no metrics captured yet from logs, try the metrics endpoint
     if current_config is None:

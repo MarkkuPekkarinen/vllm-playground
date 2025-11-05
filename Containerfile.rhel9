@@ -16,6 +16,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 # Install Python 3.11 and build dependencies
 # Note: UBI9 uses microdnf (same as Fedora Minimal)
+# curl-minimal is already pre-installed in ubi9-minimal
 RUN microdnf install -y \
     python3.11 \
     python3.11-devel \
@@ -24,10 +25,8 @@ RUN microdnf install -y \
     gcc-c++ \
     make \
     git \
-    numactl-devel \
     openssl \
     openssl-devel \
-    curl \
     tar \
     gzip \
     && microdnf clean all && \
@@ -37,11 +36,8 @@ RUN microdnf install -y \
 # Create non-root user
 RUN useradd -m -u 1001 -s /bin/bash vllm
 
-# Switch to non-root user
-USER 1001
-
-# Set working directory
-WORKDIR ${HOME}
+# Build everything as root, set working directory
+WORKDIR /home/vllm
 
 # Create and activate virtual environment, then build vLLM from source
 # x86_64 CPU optimizations will be automatically detected by PyTorch/vLLM
@@ -56,12 +52,15 @@ RUN python3 -m venv vllm_env && \
     pip install --no-cache-dir -e .
 
 # Copy the vLLM WebUI project files
-COPY --chown=1001:1001 . ${HOME}/vllm-webui/
+COPY . /home/vllm/vllm-webui/
 
 # Install WebUI dependencies
 RUN source vllm_env/bin/activate && \
     cd vllm-webui && \
     pip install --no-cache-dir -r requirements.txt
+
+# Set ownership of all files to vllm user
+RUN chown -R 1001:1001 /home/vllm
 
 # Expose ports
 # 7860 - WebUI interface
@@ -69,17 +68,20 @@ RUN source vllm_env/bin/activate && \
 EXPOSE 7860 8000
 
 # Set the working directory to the WebUI
-WORKDIR ${HOME}/vllm-webui
+WORKDIR /home/vllm/vllm-webui
 
 # Create a startup script
-RUN echo '#!/bin/bash' > ${HOME}/start.sh && \
-    echo 'source ${HOME}/vllm_env/bin/activate' >> ${HOME}/start.sh && \
-    echo 'cd ${HOME}/vllm-webui' >> ${HOME}/start.sh && \
-    echo 'exec python3 run.py' >> ${HOME}/start.sh && \
-    chmod +x ${HOME}/start.sh
+RUN echo '#!/bin/bash' > /home/vllm/start.sh && \
+    echo 'source /home/vllm/vllm_env/bin/activate' >> /home/vllm/start.sh && \
+    echo 'cd /home/vllm/vllm-webui' >> /home/vllm/start.sh && \
+    echo 'exec python3 run.py' >> /home/vllm/start.sh && \
+    chmod +x /home/vllm/start.sh
+
+# Switch to non-root user for runtime
+USER 1001
 
 # Set entrypoint
-ENTRYPOINT ["/bin/bash", "-c", "${HOME}/start.sh"]
+ENTRYPOINT ["/bin/bash", "-c", "/home/vllm/start.sh"]
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \

@@ -1,7 +1,7 @@
 # vLLM WebUI Container for GPU (CUDA)
 # Based on official vLLM OpenAI-compatible server image
 
-FROM docker.io/vllm/vllm-openai:0.11.0
+FROM docker.io/vllm/vllm-openai:latest
 
 USER root
 
