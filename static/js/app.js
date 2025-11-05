@@ -606,6 +606,11 @@ class VLLMWebUI {
             
             console.log('Full usage data:', usageData);
             
+            // Wait a moment for vLLM to log stats for this request
+            // vLLM logs stats after request completion, so we need to give it time
+            console.log('⏳ Waiting 2 seconds for vLLM to log metrics...');
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
             // Fetch additional metrics from vLLM's metrics endpoint
             let metricsAge = null;
             try {
@@ -621,9 +626,13 @@ class VLLMWebUI {
                         metricsAge = vllmMetrics.metrics_age_seconds;
                         console.log(`  → Metrics age: ${metricsAge}s`);
                         
-                        // Warn if metrics are stale (older than 30 seconds)
-                        if (metricsAge > 30) {
-                            console.warn(`  ⚠️ Metrics are stale (${metricsAge}s old) - may not reflect last response`);
+                        // Metrics should be very fresh (< 5 seconds) to be from this request
+                        if (metricsAge <= 5) {
+                            console.log(`  ✅ Metrics are fresh - likely from this response`);
+                        } else if (metricsAge > 30) {
+                            console.warn(`  ⚠️ Metrics are stale (${metricsAge}s old) - definitely NOT from this response`);
+                        } else {
+                            console.warn(`  ⚠️ Metrics are ${metricsAge}s old - may not be from this response`);
                         }
                     }
                     
@@ -921,12 +930,12 @@ class VLLMWebUI {
                 }
                 
                 // Add staleness indicator if metrics are old
-                if (metrics.metricsAge !== undefined && metrics.metricsAge > 30) {
+                if (metrics.metricsAge !== undefined && metrics.metricsAge > 5) {
                     kvCacheUsageEl.textContent = `${percentage}% ⚠️`;
-                    kvCacheUsageEl.title = `Stale data (${metrics.metricsAge.toFixed(0)}s old) - may not reflect last response`;
+                    kvCacheUsageEl.title = `Metrics age: ${metrics.metricsAge.toFixed(1)}s - may not reflect this response`;
                 } else if (metrics.metricsAge !== undefined) {
                     kvCacheUsageEl.textContent = `${percentage}%`;
-                    kvCacheUsageEl.title = `Updated ${metrics.metricsAge.toFixed(1)}s ago`;
+                    kvCacheUsageEl.title = `Fresh metrics (${metrics.metricsAge.toFixed(1)}s old) - from this response`;
                 } else {
                     kvCacheUsageEl.textContent = `${percentage}%`;
                     kvCacheUsageEl.title = '';
@@ -953,12 +962,12 @@ class VLLMWebUI {
                 }
                 
                 // Add staleness indicator if metrics are old
-                if (metrics.metricsAge !== undefined && metrics.metricsAge > 30) {
+                if (metrics.metricsAge !== undefined && metrics.metricsAge > 5) {
                     prefixCacheHitEl.textContent = `${percentage}% ⚠️`;
-                    prefixCacheHitEl.title = `Stale data (${metrics.metricsAge.toFixed(0)}s old) - may not reflect last response`;
+                    prefixCacheHitEl.title = `Metrics age: ${metrics.metricsAge.toFixed(1)}s - may not reflect this response`;
                 } else if (metrics.metricsAge !== undefined) {
                     prefixCacheHitEl.textContent = `${percentage}%`;
-                    prefixCacheHitEl.title = `Updated ${metrics.metricsAge.toFixed(1)}s ago`;
+                    prefixCacheHitEl.title = `Fresh metrics (${metrics.metricsAge.toFixed(1)}s old) - from this response`;
                 } else {
                     prefixCacheHitEl.textContent = `${percentage}%`;
                     prefixCacheHitEl.title = '';
