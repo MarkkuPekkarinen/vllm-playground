@@ -12,13 +12,20 @@ vllm-webui/
 ├── run.py                       # Backend server launcher
 ├── index.html                   # Main HTML interface
 ├── requirements.txt             # Python dependencies
+├── env.example                  # Example environment variables
 ├── LICENSE                      # MIT License
 ├── README.md                    # This file
-├── Containerfile                # Podman/Docker container definition 🐳
-├── .containerignore             # Container build exclusions
-├── Makefile                     # Quick commands for container management
-├── CONTAINER-QUICKSTART.md      # Container quick start guide 🐳
-├── README-CONTAINER.md          # Complete container documentation 🐳
+│
+├── containers/                  # Container definitions 🐳
+│   ├── Containerfile.cuda      # CUDA/GPU container (RHEL UBI9)
+│   ├── Containerfile.vllm      # vLLM official base image
+│   ├── Containerfile.mac       # macOS/CPU container
+│   └── Containerfile.rhel9     # RHEL 9 container
+│
+├── deployments/                 # Kubernetes/OpenShift deployments ☸️
+│   ├── kubernetes-deployment.yaml    # Kubernetes manifests
+│   ├── openshift-deployment.yaml     # OpenShift manifests
+│   └── deploy-to-openshift.sh       # OpenShift deployment script
 │
 ├── static/                      # Frontend assets
 │   ├── css/
@@ -26,31 +33,31 @@ vllm-webui/
 │   └── js/
 │       └── app.js              # Frontend JavaScript
 │
-├── scripts/                    # Utility scripts
-│   ├── run_cpu.sh             # Start vLLM in CPU mode (macOS compatible)
-│   ├── start.sh               # General start script
-│   ├── install.sh             # Installation script
-│   ├── verify_setup.py        # Setup verification
-│   ├── build_container.sh     # Build Podman container 🐳
-│   ├── run_container.sh       # Run Podman container 🐳
-│   ├── stop_container.sh      # Stop Podman container 🐳
-│   ├── test_container.sh      # Test container setup 🐳
-│   └── docker-compose-up.sh   # Docker Compose wrapper 🐳
+├── scripts/                     # Utility scripts
+│   ├── run_cpu.sh              # Start vLLM in CPU mode (macOS compatible)
+│   ├── start.sh                # General start script
+│   ├── install.sh              # Installation script
+│   └── verify_setup.py         # Setup verification
 │
-├── config/                     # Configuration files
-│   ├── vllm_cpu.env           # CPU mode environment variables
-│   └── example_configs.json   # Example configurations
+├── config/                      # Configuration files
+│   ├── vllm_cpu.env            # CPU mode environment variables
+│   └── example_configs.json    # Example configurations
 │
-└── docs/                       # Documentation
-    ├── QUICKSTART.md           # Quick start guide
-    ├── MACOS_CPU_GUIDE.md      # macOS CPU setup guide
+├── assets/                      # Images and assets
+│   ├── vllm-webui.png          # WebUI screenshot
+│   ├── vllm.png                # vLLM logo
+│   └── vllm.jpeg               # vLLM logo (alternate)
+│
+└── docs/                        # Documentation
+    ├── QUICKSTART.md            # Quick start guide
+    ├── MACOS_CPU_GUIDE.md       # macOS CPU setup guide
     ├── CPU_MODELS_QUICKSTART.md # CPU-optimized models guide
-    ├── GATED_MODELS_GUIDE.md   # Guide for accessing Llama, Gemma, etc.
-    ├── CHAT_TEMPLATES.md       # Model-specific chat templates
-    ├── TROUBLESHOOTING.md      # Common issues and solutions
-    ├── FEATURES.md             # Feature documentation
-    ├── PERFORMANCE_METRICS.md  # Performance metrics
-    └── QUICK_REFERENCE.md      # Command reference
+    ├── GATED_MODELS_GUIDE.md    # Guide for accessing Llama, Gemma, etc.
+    ├── CHAT_TEMPLATES.md        # Model-specific chat templates
+    ├── TROUBLESHOOTING.md       # Common issues and solutions
+    ├── FEATURES.md              # Feature documentation
+    ├── PERFORMANCE_METRICS.md   # Performance metrics
+    └── QUICK_REFERENCE.md       # Command reference
 ```
 
 ## 🚀 Quick Start
