@@ -1720,6 +1720,33 @@ body {
     letter-spacing: 2px;
 }
 
+/* Compact timer - smaller and less distracting */
+.compression-timer-compact {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    margin: 10px 0;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 0.85rem;
+}
+
+.compression-timer-compact .timer-label {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.compression-timer-compact .timer-value {
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    font-weight: 600;
+    font-family: 'Courier New', monospace;
+    letter-spacing: 1px;
+}
+
 .size-comparison {
     display: flex;
     justify-content: space-around;

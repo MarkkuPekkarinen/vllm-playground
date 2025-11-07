@@ -1968,7 +1968,7 @@ class VLLMWebUI {
         this.elements.compressionStageBadge.textContent = status.stage.toUpperCase();
         this.elements.compressionStageBadge.className = `stage-badge stage-${status.stage}`;
         
-        // Update timer display
+        // Update timer display (compact)
         if (status.elapsed_time !== null && status.elapsed_time !== undefined) {
             this.elements.compressionTimer.style.display = 'flex';
             const hours = Math.floor(status.elapsed_time / 3600);
