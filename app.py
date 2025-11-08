@@ -40,6 +40,7 @@ log_queue: asyncio.Queue = asyncio.Queue()
 websocket_connections: List[WebSocket] = []
 latest_vllm_metrics: Dict[str, Any] = {}  # Store latest metrics from logs
 metrics_timestamp: Optional[datetime] = None  # Track when metrics were last updated
+current_model_identifier: Optional[str] = None  # Track the actual model identifier passed to vLLM
 
 
 class VLLMConfig(BaseModel):
@@ -68,6 +69,9 @@ class VLLMConfig(BaseModel):
     custom_stop_tokens: Optional[List[str]] = None
     # Internal flag to track if model has built-in template
     model_has_builtin_template: bool = False
+    # Local model support - for compressed models or pre-downloaded models
+    # If specified, takes precedence over 'model' parameter
+    local_model_path: Optional[str] = None
 
 
 class ChatMessage(BaseModel):
@@ -373,6 +377,156 @@ def get_stop_tokens_for_model(model_name: str) -> List[str]:
         return ["\n\nUser:", "\n\nAssistant:"]
 
 
+def validate_local_model_path(model_path: str) -> Dict[str, Any]:
+    """
+    Validate that a local model path exists and contains required files.
+    Supports ~ for home directory expansion.
+    
+    Returns:
+        dict with keys: 'valid' (bool), 'error' (str if invalid), 'info' (dict with model info)
+    """
+    result = {
+        'valid': False,
+        'error': None,
+        'info': {}
+    }
+    
+    try:
+        # Expand ~ to home directory and resolve to absolute path
+        path = Path(model_path).expanduser().resolve()
+        
+        # Check if path exists
+        if not path.exists():
+            result['error'] = f"Path does not exist: {model_path} (expanded to: {path})"
+            return result
+        
+        # Check if it's a directory
+        if not path.is_dir():
+            result['error'] = f"Path is not a directory: {model_path}"
+            return result
+        
+        # Check for required files
+        required_files = {
+            'config.json': False,
+            'tokenizer_config.json': False,
+        }
+        
+        # Check for model weight files (at least one should exist)
+        weight_patterns = [
+            '*.safetensors',
+            '*.bin',
+            'pytorch_model*.bin',
+            'model*.safetensors',
+        ]
+        
+        has_weights = False
+        for pattern in weight_patterns:
+            if list(path.glob(pattern)):
+                has_weights = True
+                result['info']['weight_format'] = pattern
+                break
+        
+        # Check required files
+        for req_file in required_files.keys():
+            file_path = path / req_file
+            if file_path.exists():
+                required_files[req_file] = True
+        
+        # Validation results
+        missing_files = [f for f, exists in required_files.items() if not exists]
+        
+        if missing_files:
+            result['error'] = f"Missing required files: {', '.join(missing_files)}"
+            return result
+        
+        if not has_weights:
+            result['error'] = "No model weight files found (*.safetensors or *.bin)"
+            return result
+        
+        # Try to read model config for additional info
+        try:
+            import json
+            config_path = path / 'config.json'
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+                result['info']['model_type'] = config.get('model_type', 'unknown')
+                result['info']['architectures'] = config.get('architectures', [])
+                # Try to get model name from config
+                if '_name_or_path' in config:
+                    result['info']['_name_or_path'] = config['_name_or_path']
+        except Exception as e:
+            logger.warning(f"Could not read config.json: {e}")
+        
+        # Calculate directory size
+        total_size = sum(f.stat().st_size for f in path.rglob('*') if f.is_file())
+        result['info']['size_mb'] = round(total_size / (1024 * 1024), 2)
+        result['info']['path'] = str(path.resolve())
+        
+        # Extract and add the display name
+        result['info']['model_name'] = extract_model_name_from_path(str(path.resolve()), result['info'])
+        
+        result['valid'] = True
+        return result
+        
+    except Exception as e:
+        result['error'] = f"Error validating path: {str(e)}"
+        return result
+
+
+def extract_model_name_from_path(model_path: str, info: Dict[str, Any]) -> str:
+    """
+    Extract a meaningful model name from the local path.
+    Handles HuggingFace cache directory structure and other cases.
+    
+    Args:
+        model_path: Absolute path to the model directory
+        info: Model info dict from validation
+    
+    Returns:
+        A human-readable model name
+    """
+    path = Path(model_path)
+    
+    # Try to get name from config.json (_name_or_path field)
+    if '_name_or_path' in info:
+        name_or_path = info['_name_or_path']
+        # If it's a HF model path like "TinyLlama/TinyLlama-1.1B-Chat-v1.0", use that
+        if '/' in name_or_path and not name_or_path.startswith('/'):
+            return name_or_path
+    
+    # Check if this is a HuggingFace cache directory
+    # Structure: .../hub/models--Org--ModelName/snapshots/<hash>/...
+    path_parts = path.parts
+    
+    for i, part in enumerate(path_parts):
+        if part.startswith('models--'):
+            # Found HF cache structure
+            # Extract model name from "models--Org--ModelName"
+            model_cache_name = part.replace('models--', '', 1)
+            # Replace -- with /
+            model_name = model_cache_name.replace('--', '/')
+            logger.info(f"Extracted model name from HF cache: {model_name}")
+            return model_name
+    
+    # If not HF cache, check for common compressed model naming patterns
+    # e.g., "compressed_TinyLlama_w8a8_20240101_120000"
+    dir_name = path.name
+    
+    if dir_name.startswith('compressed_'):
+        # Try to extract original model name
+        # Remove 'compressed_' prefix and any suffix after the last underscore
+        cleaned = dir_name.replace('compressed_', '', 1)
+        # If it has timestamp pattern at end, remove it
+        import re
+        # Remove patterns like _w8a8_20240101_120000 or _w8a8
+        cleaned = re.sub(r'_[wW]\d+[aA]\d+(_\d{8}_\d{6})?$', '', cleaned)
+        if cleaned:
+            return cleaned
+    
+    # Last resort: use directory name
+    return dir_name
+
+
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
     """Serve the main HTML page"""
@@ -405,21 +559,59 @@ async def get_status() -> ServerStatus:
 @app.post("/api/start")
 async def start_server(config: VLLMConfig):
     """Start the vLLM server"""
-    global vllm_process, current_config, server_start_time
+    global vllm_process, current_config, server_start_time, current_model_identifier
     
     if vllm_process is not None and vllm_process.poll() is None:
         raise HTTPException(status_code=400, detail="Server is already running")
     
-    # Check if gated model requires HF token
-    # Meta Llama models (official and RedHatAI) are gated in our supported list
-    model_lower = config.model.lower()
-    is_gated = 'meta-llama/' in model_lower or 'redhatai/llama' in model_lower
+    # Determine if using local model or HuggingFace Hub
+    # Local model path takes precedence
+    model_source = None
+    model_display_name = None
     
-    if is_gated and not config.hf_token:
-        raise HTTPException(
-            status_code=400, 
-            detail=f"This model ({config.model}) is gated and requires a HuggingFace token. Please provide your HF token."
-        )
+    if config.local_model_path:
+        # Using local model - validate with comprehensive validation
+        await broadcast_log("[WEBUI] Validating local model path...")
+        
+        validation_result = validate_local_model_path(config.local_model_path)
+        
+        if not validation_result['valid']:
+            error_msg = validation_result.get('error', 'Invalid local model path')
+            await broadcast_log(f"[WEBUI] ERROR: {error_msg}")
+            raise HTTPException(status_code=400, detail=error_msg)
+        
+        # Use resolved absolute path
+        info = validation_result['info']
+        model_source = info['path']
+        
+        # Extract meaningful model name
+        model_display_name = extract_model_name_from_path(model_source, info)
+        
+        # Log detailed validation info
+        await broadcast_log(f"[WEBUI] ✓ Local model validated successfully")
+        await broadcast_log(f"[WEBUI] Model name: {model_display_name}")
+        await broadcast_log(f"[WEBUI] Path: {model_source}")
+        await broadcast_log(f"[WEBUI] Size: {info.get('size_mb', 'unknown')} MB")
+        if info.get('model_type'):
+            await broadcast_log(f"[WEBUI] Model type: {info['model_type']}")
+        if info.get('weight_format'):
+            await broadcast_log(f"[WEBUI] Weight format: {info['weight_format']}")
+    else:
+        # Using HuggingFace Hub model
+        model_source = config.model
+        model_display_name = config.model
+        
+        # Check if gated model requires HF token
+        # Meta Llama models (official and RedHatAI) are gated in our supported list
+        model_lower = config.model.lower()
+        is_gated = 'meta-llama/' in model_lower or 'redhatai/llama' in model_lower
+        
+        if is_gated and not config.hf_token:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"This model ({config.model}) is gated and requires a HuggingFace token. Please provide your HF token."
+            )
+        await broadcast_log(f"[WEBUI] Using HuggingFace Hub model: {model_source}")
     
     try:
         # Check if user manually selected CPU mode (takes precedence)
@@ -468,7 +660,7 @@ async def start_server(config: VLLMConfig):
         cmd = [
             sys.executable,
             "-m", "vllm.entrypoints.openai.api_server",
-            "--model", config.model,
+            "--model", model_source,  # Use model_source (local path or HF model name)
             "--host", config.host,
             "--port", str(config.port),
         ]
@@ -564,11 +756,18 @@ async def start_server(config: VLLMConfig):
         current_config = config
         server_start_time = datetime.now()
         
+        # Store the actual model identifier for use in API calls
+        current_model_identifier = model_source
+        
         # Start log reader task
         asyncio.create_task(read_logs())
         
         await broadcast_log(f"[WEBUI] vLLM server starting with PID: {vllm_process.pid}")
-        await broadcast_log(f"[WEBUI] Model: {config.model}")
+        await broadcast_log(f"[WEBUI] Model: {model_display_name}")
+        if config.local_model_path:
+            await broadcast_log(f"[WEBUI] Model Source: Local ({model_source})")
+        else:
+            await broadcast_log(f"[WEBUI] Model Source: HuggingFace Hub")
         if config.use_cpu:
             await broadcast_log(f"[WEBUI] Mode: CPU (KV Cache: {config.cpu_kvcache_space}GB)")
         else:
@@ -584,7 +783,7 @@ async def start_server(config: VLLMConfig):
 @app.post("/api/stop")
 async def stop_server():
     """Stop the vLLM server"""
-    global vllm_process, server_start_time
+    global vllm_process, server_start_time, current_model_identifier
     
     if vllm_process is None:
         raise HTTPException(status_code=400, detail="Server is not running")
@@ -602,6 +801,7 @@ async def stop_server():
         
         vllm_process = None
         server_start_time = None
+        current_model_identifier = None
         await broadcast_log("[WEBUI] vLLM server stopped")
         
         return {"status": "stopped"}
@@ -774,7 +974,7 @@ class ChatRequestWithStopTokens(BaseModel):
 @app.post("/api/chat")
 async def chat(request: ChatRequestWithStopTokens):
     """Proxy chat requests to vLLM server using OpenAI-compatible /v1/chat/completions endpoint"""
-    global current_config
+    global current_config, current_model_identifier
     
     if vllm_process is None or vllm_process.poll() is not None:
         raise HTTPException(status_code=400, detail="vLLM server is not running")
@@ -793,8 +993,9 @@ async def chat(request: ChatRequestWithStopTokens):
         messages_dict = [{"role": m.role, "content": m.content} for m in request.messages]
         
         # Build payload for OpenAI-compatible endpoint
+        # Use current_model_identifier (actual path or HF model) instead of config.model
         payload = {
-            "model": current_config.model,
+            "model": current_model_identifier if current_model_identifier else current_config.model,
             "messages": messages_dict,
             "temperature": request.temperature,
             "max_tokens": request.max_tokens,
@@ -919,7 +1120,7 @@ class CompletionRequest(BaseModel):
 @app.post("/api/completion")
 async def completion(request: CompletionRequest):
     """Proxy completion requests to vLLM server for base models"""
-    global current_config
+    global current_config, current_model_identifier
     
     if vllm_process is None or vllm_process.poll() is not None:
         raise HTTPException(status_code=400, detail="vLLM server is not running")
@@ -933,7 +1134,7 @@ async def completion(request: CompletionRequest):
         url = f"http://{current_config.host}:{current_config.port}/v1/completions"
         
         payload = {
-            "model": current_config.model,
+            "model": current_model_identifier if current_model_identifier else current_config.model,
             "prompt": request.prompt,
             "temperature": request.temperature,
             "max_tokens": request.max_tokens
@@ -969,6 +1170,190 @@ async def list_models():
     ]
     
     return {"models": common_models}
+
+
+@app.post("/api/models/validate-local")
+async def validate_local_model(request: dict):
+    """
+    Validate a local model path
+    
+    Request body: {"path": "/path/to/model"}
+    Response: {"valid": bool, "error": str, "info": dict}
+    """
+    model_path = request.get('path', '')
+    
+    if not model_path:
+        return JSONResponse(
+            status_code=400,
+            content={"valid": False, "error": "No path provided"}
+        )
+    
+    result = validate_local_model_path(model_path)
+    
+    if result['valid']:
+        return result
+    else:
+        return JSONResponse(
+            status_code=400,
+            content=result
+        )
+
+
+@app.post("/api/browse-directories")
+async def browse_directories(request: dict):
+    """
+    Browse directories on the server for folder selection
+    
+    Request body: {"path": "/path/to/directory"}
+    Response: {"directories": [...], "current_path": "..."}
+    """
+    try:
+        import os
+        from pathlib import Path
+        
+        requested_path = request.get('path', '~')
+        
+        # Expand ~ to home directory
+        if requested_path == '~':
+            requested_path = str(Path.home())
+        
+        path = Path(requested_path).expanduser().resolve()
+        
+        # Security check: ensure path exists and is a directory
+        if not path.exists():
+            # Try parent directory
+            path = path.parent
+            if not path.exists():
+                path = Path.home()
+        
+        if not path.is_dir():
+            path = path.parent
+        
+        # List only directories (not files)
+        directories = []
+        
+        try:
+            # Add parent directory option (except for root)
+            if path.parent != path:
+                directories.append({
+                    'name': '..',
+                    'path': str(path.parent)
+                })
+            
+            # List subdirectories
+            for item in sorted(path.iterdir()):
+                if item.is_dir() and not item.name.startswith('.'):
+                    # Check if it might be a model directory (has config.json)
+                    is_model_dir = (item / 'config.json').exists()
+                    directories.append({
+                        'name': item.name + (' 🤖' if is_model_dir else ''),
+                        'path': str(item)
+                    })
+        except PermissionError:
+            logger.warning(f"Permission denied accessing directory: {path}")
+        
+        return {
+            "directories": directories[:100],  # Limit to 100 directories
+            "current_path": str(path)
+        }
+    
+    except Exception as e:
+        logger.error(f"Error browsing directories: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Failed to browse directories: {str(e)}"}
+        )
+
+
+class LocalModelValidationRequest(BaseModel):
+    """Request to validate a local model path"""
+    path: str
+
+
+class LocalModelValidationResponse(BaseModel):
+    """Response for local model path validation"""
+    valid: bool
+    message: str
+    model_name: Optional[str] = None
+    model_type: Optional[str] = None
+    has_tokenizer: bool = False
+    has_config: bool = False
+    estimated_size_mb: Optional[float] = None
+
+
+@app.post("/api/models/validate-local")
+async def validate_local_model(request: LocalModelValidationRequest) -> LocalModelValidationResponse:
+    """Validate a local model directory"""
+    try:
+        model_path = Path(request.path)
+        
+        # Check if path exists
+        if not model_path.exists():
+            return LocalModelValidationResponse(
+                valid=False,
+                message=f"Path does not exist: {request.path}"
+            )
+        
+        # Check if it's a directory
+        if not model_path.is_dir():
+            return LocalModelValidationResponse(
+                valid=False,
+                message=f"Path must be a directory, not a file"
+            )
+        
+        # Check for required files
+        config_file = model_path / "config.json"
+        tokenizer_config = model_path / "tokenizer_config.json"
+        has_config = config_file.exists()
+        has_tokenizer = tokenizer_config.exists()
+        
+        if not has_config:
+            return LocalModelValidationResponse(
+                valid=False,
+                message=f"Invalid model directory: missing config.json",
+                has_config=has_config,
+                has_tokenizer=has_tokenizer
+            )
+        
+        # Try to read model info from config.json
+        model_type = None
+        model_name = model_path.name
+        try:
+            import json
+            with open(config_file, 'r') as f:
+                config_data = json.load(f)
+                model_type = config_data.get('model_type', 'unknown')
+                # Try to get architectures
+                architectures = config_data.get('architectures', [])
+                if architectures:
+                    model_type = architectures[0]
+        except Exception as e:
+            logger.warning(f"Could not read config.json: {e}")
+        
+        # Estimate directory size
+        estimated_size_mb = None
+        try:
+            total_size = sum(f.stat().st_size for f in model_path.rglob('*') if f.is_file())
+            estimated_size_mb = total_size / (1024 * 1024)  # Convert to MB
+        except Exception as e:
+            logger.warning(f"Could not estimate model size: {e}")
+        
+        return LocalModelValidationResponse(
+            valid=True,
+            message=f"Valid model directory",
+            model_name=model_name,
+            model_type=model_type,
+            has_config=has_config,
+            has_tokenizer=has_tokenizer,
+            estimated_size_mb=round(estimated_size_mb, 2) if estimated_size_mb else None
+        )
+    
+    except Exception as e:
+        logger.error(f"Error validating local model: {e}")
+        return LocalModelValidationResponse(
+            valid=False,
+            message=f"Error validating path: {str(e)}"
+        )
 
 
 @app.get("/api/chat/template")
@@ -1153,7 +1538,7 @@ async def stop_benchmark():
 
 async def run_benchmark(config: BenchmarkConfig, server_config: VLLMConfig):
     """Run a simple benchmark test"""
-    global benchmark_results
+    global benchmark_results, current_model_identifier
     
     try:
         import aiohttp
@@ -1181,7 +1566,7 @@ async def run_benchmark(config: BenchmarkConfig, server_config: VLLMConfig):
                 
                 try:
                     payload = {
-                        "model": server_config.model,
+                        "model": current_model_identifier if current_model_identifier else server_config.model,
                         "messages": [{"role": "user", "content": prompt_text}],
                         "max_tokens": config.output_tokens,
                         "temperature": 0.7,

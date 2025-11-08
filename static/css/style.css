@@ -222,7 +222,7 @@ body {
 
 /* Panel sizing */
 .sidebar {
-    width: 350px;
+    width: 420px;
     flex-shrink: 0;
 }
 
@@ -244,7 +244,7 @@ body {
 
 @media (max-width: 1400px) {
     .sidebar {
-        width: 300px;
+        width: 350px;
     }
     
     .logs-section {
@@ -1921,5 +1921,98 @@ body {
     
     .size-arrow {
         transform: rotate(90deg);
+    }
+}
+
+/* Local Model Validation & Info Styles */
+.local-path-buttons {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+    margin-bottom: 4px;
+}
+
+.local-path-buttons .btn {
+    white-space: nowrap;
+    padding: 8px 16px;
+}
+
+.validation-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    animation: fadeIn 0.3s ease;
+}
+
+.validation-status.valid {
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    color: #10b981;
+}
+
+.validation-status.invalid {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #ef4444;
+}
+
+.validation-status.validating {
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    color: #f59e0b;
+}
+
+#validation-icon {
+    font-size: 1.1rem;
+}
+
+.model-info-box {
+    animation: slideDown 0.3s ease;
+}
+
+.info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(71, 85, 105, 0.3);
+}
+
+.info-row:last-child {
+    border-bottom: none;
+}
+
+.info-label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.info-value {
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
     }
 }

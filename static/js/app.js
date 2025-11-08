@@ -39,6 +39,21 @@ class VLLMWebUI {
             host: document.getElementById('host'),
             port: document.getElementById('port'),
             
+            // Model Source Toggle
+            modelSourceHub: document.getElementById('model-source-hub'),
+            modelSourceLocal: document.getElementById('model-source-local'),
+            modelSourceHubLabel: document.getElementById('model-source-hub-label'),
+            modelSourceLocalLabel: document.getElementById('model-source-local-label'),
+            hubModelSection: document.getElementById('hub-model-section'),
+            localModelSection: document.getElementById('local-model-section'),
+            localModelPath: document.getElementById('local-model-path'),
+            browseFolderBtn: document.getElementById('browse-folder-btn'),
+            validatePathBtn: document.getElementById('validate-path-btn'),
+            localModelValidation: document.getElementById('local-model-validation'),
+            validationIcon: document.getElementById('validation-icon'),
+            validationMessage: document.getElementById('validation-message'),
+            localModelInfo: document.getElementById('local-model-info'),
+            
             // CPU/GPU Mode
             modeCpu: document.getElementById('mode-cpu'),
             modeGpu: document.getElementById('mode-gpu'),
@@ -160,6 +175,9 @@ class VLLMWebUI {
         // Initialize compute mode (CPU is default)
         this.toggleComputeMode();
         
+        // Initialize model source (HF Hub is default)
+        this.toggleModelSource();
+        
         // Update command preview initially
         this.updateCommandPreview();
         
@@ -188,6 +206,27 @@ class VLLMWebUI {
         // CPU/GPU mode toggle
         this.elements.modeCpu.addEventListener('change', () => this.toggleComputeMode());
         this.elements.modeGpu.addEventListener('change', () => this.toggleComputeMode());
+        
+        // Model Source toggle
+        this.elements.modelSourceHub.addEventListener('change', () => this.toggleModelSource());
+        this.elements.modelSourceLocal.addEventListener('change', () => this.toggleModelSource());
+        
+        // Local model path validation and browse
+        this.elements.browseFolderBtn.addEventListener('click', () => this.browseForFolder());
+        this.elements.validatePathBtn.addEventListener('click', () => this.validateLocalModelPath());
+        
+        // Optional: validate on blur (can be removed if you want manual-only validation)
+        this.elements.localModelPath.addEventListener('blur', () => {
+            // Auto-validate only if path is not empty
+            if (this.elements.localModelPath.value.trim()) {
+                this.validateLocalModelPath();
+            }
+        });
+        
+        // Clear validation when user starts typing
+        this.elements.localModelPath.addEventListener('input', () => {
+            this.clearLocalModelValidation();
+        });
         
         // Chat
         this.elements.sendBtn.addEventListener('click', () => this.sendMessage());
@@ -396,8 +435,285 @@ class VLLMWebUI {
         this.updateCommandPreview();
     }
 
+    toggleModelSource() {
+        const isLocalModel = this.elements.modelSourceLocal.checked;
+        
+        // Update button active states
+        if (isLocalModel) {
+            this.elements.modelSourceHubLabel.classList.remove('active');
+            this.elements.modelSourceLocalLabel.classList.add('active');
+            
+            // Show local model section, hide HF hub section
+            this.elements.localModelSection.style.display = 'block';
+            this.elements.hubModelSection.style.display = 'none';
+        } else {
+            this.elements.modelSourceHubLabel.classList.add('active');
+            this.elements.modelSourceLocalLabel.classList.remove('active');
+            
+            // Show HF hub section, hide local model section
+            this.elements.localModelSection.style.display = 'none';
+            this.elements.hubModelSection.style.display = 'block';
+            
+            // Clear local model validation
+            this.clearLocalModelValidation();
+        }
+        
+        // Update command preview
+        this.updateCommandPreview();
+    }
+
+    async validateLocalModelPath() {
+        const path = this.elements.localModelPath.value.trim();
+        
+        if (!path) {
+            return;
+        }
+        
+        // Show validating status
+        this.showValidationStatus('validating', 'Validating path...');
+        
+        try {
+            const response = await fetch('/api/models/validate-local', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: path })
+            });
+            
+            const result = await response.json();
+            
+            if (result.valid) {
+                // Show success
+                this.showValidationStatus('valid', '✓ Valid model directory');
+                
+                // Update model info display
+                this.updateLocalModelInfo(result.info);
+            } else {
+                // Show error
+                this.showValidationStatus('invalid', `✗ ${result.error}`);
+                this.hideLocalModelInfo();
+            }
+        } catch (error) {
+            this.showValidationStatus('invalid', `✗ Error validating path: ${error.message}`);
+            this.hideLocalModelInfo();
+        }
+    }
+
+    showValidationStatus(type, message) {
+        this.elements.localModelValidation.style.display = 'block';
+        this.elements.validationMessage.textContent = message;
+        
+        // Remove existing classes
+        this.elements.localModelValidation.classList.remove('valid', 'invalid', 'validating');
+        
+        // Add appropriate class
+        this.elements.localModelValidation.classList.add(type);
+    }
+
+    clearLocalModelValidation() {
+        this.elements.localModelValidation.style.display = 'none';
+        this.hideLocalModelInfo();
+    }
+
+    updateLocalModelInfo(info) {
+        // Show model info box
+        this.elements.localModelInfo.style.display = 'block';
+        
+        // Use model_name from backend (intelligently extracted)
+        // Fallback to extracting from path if not provided (backward compatibility)
+        let modelName;
+        if (info.model_name) {
+            modelName = info.model_name;
+        } else {
+            // Fallback: extract from path
+            const pathParts = info.path.split('/');
+            modelName = pathParts[pathParts.length - 1];
+        }
+        
+        document.getElementById('info-model-name').textContent = modelName;
+        document.getElementById('info-model-type').textContent = info.model_type || 'Unknown';
+        document.getElementById('info-model-size').textContent = info.size_mb ? `${info.size_mb} MB` : 'Unknown';
+        document.getElementById('info-has-tokenizer').textContent = 'Yes'; // We validated tokenizer_config.json exists
+    }
+
+    hideLocalModelInfo() {
+        this.elements.localModelInfo.style.display = 'none';
+    }
+
+    async browseForFolder() {
+        // Try using the File System Access API (Chrome/Edge)
+        if ('showDirectoryPicker' in window) {
+            try {
+                // Show native directory picker (modern browsers)
+                const dirHandle = await window.showDirectoryPicker({
+                    mode: 'read'
+                });
+                
+                // We can't get the absolute path directly from the handle for security reasons
+                // but we can check if it's a valid model directory
+                
+                // Check for required files
+                let hasConfig = false;
+                let hasTokenizer = false;
+                
+                try {
+                    await dirHandle.getFileHandle('config.json');
+                    hasConfig = true;
+                } catch (e) {
+                    // File doesn't exist
+                }
+                
+                try {
+                    await dirHandle.getFileHandle('tokenizer_config.json');
+                    hasTokenizer = true;
+                } catch (e) {
+                    // File doesn't exist
+                }
+                
+                if (!hasConfig || !hasTokenizer) {
+                    this.showNotification('⚠️ Selected directory is missing required model files (config.json or tokenizer_config.json)', 'error');
+                    return;
+                }
+                
+                // Show a prompt asking for the absolute path since we can't get it from the API
+                this.showNotification('Directory selected! Please enter the absolute path to this directory.', 'info');
+                this.showNotification('💡 The browser cannot access the full path for security reasons. Please type or paste the absolute path.', 'info');
+                
+                // Focus the input so user can type the path
+                this.elements.localModelPath.focus();
+                
+            } catch (error) {
+                if (error.name !== 'AbortError') {
+                    console.error('Directory picker error:', error);
+                    this.showNotification('Failed to open directory picker', 'error');
+                }
+            }
+        } else {
+            // Fallback: Try backend-based folder browser
+            await this.showBackendFolderBrowser();
+        }
+    }
+
+    async showBackendFolderBrowser() {
+        // Show modal with backend folder browser
+        try {
+            const response = await fetch('/api/browse-directories', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: this.elements.localModelPath.value || '~' })
+            });
+            
+            if (!response.ok) {
+                throw new Error('Backend folder browser not available');
+            }
+            
+            const data = await response.json();
+            
+            // Create and show a simple folder browser modal
+            this.showFolderBrowserModal(data.directories, data.current_path);
+            
+        } catch (error) {
+            console.error('Backend browser error:', error);
+            // Show helpful message
+            this.showNotification(
+                '📁 Folder browser unavailable. Please type the absolute path manually.\n\n' +
+                'Example:\n' +
+                '  • macOS/Linux: /Users/username/models/my-model\n' +
+                '  • Windows: C:/Users/username/models/my-model',
+                'info'
+            );
+        }
+    }
+
+    showFolderBrowserModal(directories, currentPath) {
+        // Create a simple modal for browsing directories
+        // This is a fallback UI when File System Access API is not available
+        
+        const modal = document.createElement('div');
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        `;
+        
+        const content = document.createElement('div');
+        content.style.cssText = `
+            background: #1e293b;
+            padding: 24px;
+            border-radius: 12px;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow: auto;
+            color: #e2e8f0;
+        `;
+        
+        content.innerHTML = `
+            <h3 style="margin-top: 0;">Browse Directories</h3>
+            <div style="margin-bottom: 16px; padding: 12px; background: #0f172a; border-radius: 6px; font-family: monospace; word-break: break-all;">
+                ${currentPath}
+            </div>
+            <div id="folder-list" style="margin-bottom: 16px;">
+                ${directories.map(dir => `
+                    <div class="folder-item" data-path="${dir.path}" style="padding: 8px 12px; margin: 4px 0; background: #334155; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 1.2em;">📁</span>
+                        <span>${dir.name}</span>
+                    </div>
+                `).join('')}
+            </div>
+            <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                <button id="browser-select-btn" class="btn btn-primary">Select This Folder</button>
+                <button id="browser-cancel-btn" class="btn btn-secondary">Cancel</button>
+            </div>
+        `;
+        
+        modal.appendChild(content);
+        document.body.appendChild(modal);
+        
+        // Add event listeners
+        document.getElementById('browser-select-btn').addEventListener('click', () => {
+            this.elements.localModelPath.value = currentPath;
+            document.body.removeChild(modal);
+            this.validateLocalModelPath();
+        });
+        
+        document.getElementById('browser-cancel-btn').addEventListener('click', () => {
+            document.body.removeChild(modal);
+        });
+        
+        // Navigate to subdirectory on click
+        document.querySelectorAll('.folder-item').forEach(item => {
+            item.addEventListener('click', async () => {
+                const path = item.getAttribute('data-path');
+                document.body.removeChild(modal);
+                
+                // Fetch subdirectory contents
+                try {
+                    const response = await fetch('/api/browse-directories', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ path: path })
+                    });
+                    const data = await response.json();
+                    this.showFolderBrowserModal(data.directories, data.current_path);
+                } catch (error) {
+                    this.showNotification('Failed to browse directory', 'error');
+                }
+            });
+        });
+    }
+
     getConfig() {
+        // Check if using local model or HF hub
+        const isLocalModel = this.elements.modelSourceLocal.checked;
+        
         const model = this.elements.customModel.value.trim() || this.elements.modelSelect.value;
+        const localModelPath = this.elements.localModelPath.value.trim();
         const maxModelLen = this.elements.maxModelLen.value;
         const isCpuMode = this.elements.modeCpu.checked;
         const hfToken = this.elements.hfToken.value.trim();
@@ -412,7 +728,8 @@ class VLLMWebUI {
             enable_prefix_caching: this.elements.enablePrefixCaching.checked,
             disable_log_stats: this.elements.disableLogStats.checked,
             use_cpu: isCpuMode,
-            hf_token: hfToken || null  // Include HF token for gated models
+            hf_token: hfToken || null,  // Include HF token for gated models
+            local_model_path: isLocalModel && localModelPath ? localModelPath : null  // Add local model path
         };
         
         // Don't send chat template or stop tokens - let vLLM auto-detect them
@@ -436,15 +753,53 @@ class VLLMWebUI {
     async startServer() {
         const config = this.getConfig();
         
-        // Check if gated model requires HF token (frontend validation)
-        // Meta Llama models (official and RedHatAI) are gated in our supported list
-        const model = config.model.toLowerCase();
-        const isGated = model.includes('meta-llama/') || model.includes('redhatai/llama');
+        // Validate local model path if using local model
+        if (config.local_model_path) {
+            this.addLog('🔍 Validating local model path...', 'info');
+            
+            // Check if path is provided
+            if (!config.local_model_path.trim()) {
+                this.showNotification('⚠️ Please enter a local model path', 'error');
+                this.addLog('❌ Local model path is empty', 'error');
+                return;
+            }
+            
+            // Validate the path before starting server
+            try {
+                const validateResponse = await fetch('/api/models/validate-local', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: config.local_model_path })
+                });
+                
+                const validateResult = await validateResponse.json();
+                
+                if (!validateResult.valid) {
+                    this.showNotification(`⚠️ Invalid model path: ${validateResult.error}`, 'error');
+                    this.addLog(`❌ Path validation failed: ${validateResult.error}`, 'error');
+                    return;
+                }
+                
+                this.addLog(`✓ Local model validated successfully`, 'success');
+                this.addLog(`  Path: ${validateResult.info.path}`, 'info');
+                this.addLog(`  Size: ${validateResult.info.size_mb} MB`, 'info');
+            } catch (error) {
+                this.showNotification('⚠️ Failed to validate local model path', 'error');
+                this.addLog(`❌ Validation error: ${error.message}`, 'error');
+                return;
+            }
+        }
         
-        if (isGated && !config.hf_token) {
-            this.showNotification(`⚠️ ${config.model} is a gated model and requires a HuggingFace token!`, 'error');
-            this.addLog(`❌ Gated model requires HF token: ${config.model}`, 'error');
-            return;
+        // Check if gated model requires HF token (frontend validation) - only for HF Hub models
+        if (!config.local_model_path) {
+            const model = config.model.toLowerCase();
+            const isGated = model.includes('meta-llama/') || model.includes('redhatai/llama');
+            
+            if (isGated && !config.hf_token) {
+                this.showNotification(`⚠️ ${config.model} is a gated model and requires a HuggingFace token!`, 'error');
+                this.addLog(`❌ Gated model requires HF token: ${config.model}`, 'error');
+                return;
+            }
         }
         
         // Reset ready state
@@ -456,7 +811,15 @@ class VLLMWebUI {
         
         // Add immediate log feedback
         this.addLog('🚀 Starting vLLM server...', 'info');
-        this.addLog(`Model: ${config.model}`, 'info');
+        
+        if (config.local_model_path) {
+            this.addLog(`Model Source: Local Folder`, 'info');
+            this.addLog(`Path: ${config.local_model_path}`, 'info');
+        } else {
+            this.addLog(`Model Source: HuggingFace Hub`, 'info');
+            this.addLog(`Model: ${config.model}`, 'info');
+        }
+        
         this.addLog(`Mode: ${config.use_cpu ? 'CPU' : 'GPU'}`, 'info');
         
         try {
@@ -2044,10 +2407,38 @@ class VLLMWebUI {
     }
     
     async loadCompressedIntoVLLM() {
-        this.showNotification('Loading compressed model into vLLM...', 'info');
-        // This would require updating the server config with the compressed model path
-        // For now, show instructions to user
-        alert('To load the compressed model:\n\n1. Download the compressed model\n2. Extract it to a directory\n3. Stop the current vLLM server\n4. Update the model path in configuration\n5. Start the server with the new model');
+        // Get the output directory path from compression status
+        const outputPath = this.elements.outputDirPath.textContent;
+        
+        if (!outputPath || outputPath === '--') {
+            this.showNotification('No compressed model path available', 'error');
+            return;
+        }
+        
+        try {
+            // Switch to local model mode
+            this.elements.modelSourceLocal.checked = true;
+            this.toggleModelSource();
+            
+            // Set the local model path
+            this.elements.localModelPath.value = outputPath;
+            
+            // Validate the path
+            await this.validateLocalModelPath();
+            
+            // Scroll to the configuration panel
+            document.getElementById('config-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+            
+            // Show success notification
+            this.showNotification('✅ Compressed model loaded! Review settings and click "Start Server"', 'success');
+            
+            // Optionally update command preview
+            this.updateCommandPreview();
+            
+        } catch (error) {
+            console.error('Error loading compressed model:', error);
+            this.showNotification('Failed to load compressed model', 'error');
+        }
     }
     
     async copyOutputPath() {

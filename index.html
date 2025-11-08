@@ -31,7 +31,24 @@
                 <div class="panel">
                     <h2>⚙️ Server Configuration</h2>
                     
-                    <div class="form-group">
+                    <!-- Model Source Toggle -->
+                    <div class="form-group mode-toggle-group">
+                        <label>Model Source</label>
+                        <div class="mode-toggle-buttons">
+                            <label class="mode-button active" id="model-source-hub-label">
+                                <input type="radio" name="model-source" id="model-source-hub" value="hub" checked>
+                                <span>🤗 HuggingFace</span>
+                            </label>
+                            <label class="mode-button" id="model-source-local-label">
+                                <input type="radio" name="model-source" id="model-source-local" value="local">
+                                <span>📁 Local</span>
+                            </label>
+                        </div>
+                        <small class="form-help" id="model-source-help-text">Select model from HuggingFace or local directory</small>
+                    </div>
+
+                    <!-- HuggingFace Hub Model Selection (default visible) -->
+                    <div id="hub-model-section" class="form-group">
                         <label for="model-select">Model</label>
                         <select id="model-select" class="form-control">
                             <!-- CPU-Optimized Models (Recommended for macOS) -->
@@ -48,6 +65,47 @@
                         </select>
                         <small class="form-help">All models support chat interface. Gated models require HF token below.</small>
                         <input type="text" id="custom-model" class="form-control" placeholder="Or enter custom model name">
+                    </div>
+
+                    <!-- Local Model Path Section (hidden by default) -->
+                    <div id="local-model-section" class="form-group" style="display: none;">
+                        <label for="local-model-path">Local Model Directory Path</label>
+                        <input type="text" id="local-model-path" class="form-control" placeholder="~/models/my-model or /absolute/path/to/model">
+                        <div class="local-path-buttons">
+                            <button id="browse-folder-btn" class="btn btn-secondary btn-sm" title="Browse for folder">
+                                📁 Browse
+                            </button>
+                            <button id="validate-path-btn" class="btn btn-secondary btn-sm" title="Validate path">
+                                Validate
+                            </button>
+                        </div>
+                        <small class="form-help">Enter absolute path to directory containing model files (config.json, weights, etc.). Supports ~ for home directory.</small>
+                        
+                        <!-- Validation Status -->
+                        <div id="local-model-validation" class="validation-status" style="display: none; margin-top: 8px;">
+                            <span id="validation-icon"></span>
+                            <span id="validation-message"></span>
+                        </div>
+                        
+                        <!-- Model Info Display -->
+                        <div id="local-model-info" class="model-info-box" style="display: none; margin-top: 10px; padding: 10px; background: #1e293b; border-radius: 6px; border-left: 3px solid #10b981;">
+                            <div class="info-row">
+                                <span class="info-label">Model Name:</span>
+                                <span id="info-model-name" class="info-value">-</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Model Type:</span>
+                                <span id="info-model-type" class="info-value">-</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Size:</span>
+                                <span id="info-model-size" class="info-value">-</span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Has Tokenizer:</span>
+                                <span id="info-has-tokenizer" class="info-value">-</span>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- HuggingFace Token for Gated Models -->
