@@ -2172,11 +2172,16 @@ async def run_compression(config: CompressionConfig):
     global compression_status
     
     try:
-        # Set HF token if provided
-        env = os.environ.copy()
+        # Set HF token if provided - must be set in os.environ for llmcompressor to use it
+        hf_token_set = False
+        original_hf_token = os.environ.get('HF_TOKEN')
+        original_hf_hub_token = os.environ.get('HUGGING_FACE_HUB_TOKEN')
+        
         if config.hf_token:
-            env['HF_TOKEN'] = config.hf_token
-            env['HUGGING_FACE_HUB_TOKEN'] = config.hf_token
+            os.environ['HF_TOKEN'] = config.hf_token
+            os.environ['HUGGING_FACE_HUB_TOKEN'] = config.hf_token
+            hf_token_set = True
+            await broadcast_log("[COMPRESSION] Using provided HF token for authentication")
         
         compression_status.stage = "loading"
         compression_status.progress = 10.0
@@ -2219,6 +2224,7 @@ async def run_compression(config: CompressionConfig):
             loop = asyncio.get_event_loop()
             
             # Start the compression in a background thread
+            # Note: The HF token is already set in os.environ above
             compression_future = loop.run_in_executor(
                 None,
                 lambda: oneshot(
@@ -2324,6 +2330,19 @@ async def run_compression(config: CompressionConfig):
         compression_status.error = str(e)
         compression_status.message = f"Error: {str(e)}"
         await broadcast_log(f"[COMPRESSION] ❌ Error: {str(e)}")
+    
+    finally:
+        # Restore original HF token environment variables
+        if hf_token_set:
+            if original_hf_token is not None:
+                os.environ['HF_TOKEN'] = original_hf_token
+            elif 'HF_TOKEN' in os.environ:
+                del os.environ['HF_TOKEN']
+            
+            if original_hf_hub_token is not None:
+                os.environ['HUGGING_FACE_HUB_TOKEN'] = original_hf_hub_token
+            elif 'HUGGING_FACE_HUB_TOKEN' in os.environ:
+                del os.environ['HUGGING_FACE_HUB_TOKEN']
 
 
 def build_compression_recipe(config: CompressionConfig) -> List:

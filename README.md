@@ -175,6 +175,7 @@ nano config/vllm_cpu.env
 - **[Container Full Guide](README-CONTAINER.md)** - Complete container documentation
 - **[Container Workflow](CONTAINER-WORKFLOW.md)** - Step-by-step container workflow
 - **[Quick Start Guide](docs/QUICKSTART.md)** - Get up and running in minutes
+- **[Command-Line Demo Guide](cli_demo/docs/CLI_DEMO_GUIDE.md)** 🆕 - Full workflow demo with vLLM, LLMCompressor & GuideLLM
 - [macOS CPU Setup](docs/MACOS_CPU_GUIDE.md) - Apple Silicon optimization guide
 - [CPU Models Quickstart](docs/CPU_MODELS_QUICKSTART.md) - Best models for CPU
 
@@ -186,6 +187,7 @@ nano config/vllm_cpu.env
 - [Feature Overview](docs/FEATURES.md) - Complete feature list
 - [Performance Metrics](docs/PERFORMANCE_METRICS.md) - Benchmarking and metrics
 - [Command Reference](docs/QUICK_REFERENCE.md) - Command cheat sheet
+- [CLI Quick Reference](cli_demo/docs/CLI_QUICK_REFERENCE.md) - Command-line demo quick reference 🆕
 - [Troubleshooting](docs/TROUBLESHOOTING.md) - Common issues and solutions
 
 ## 🔧 Configuration

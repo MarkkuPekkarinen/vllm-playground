@@ -43,8 +43,14 @@ RUN useradd -m -u 1001 -g 0 -s /bin/bash vllm && \
     chmod -R g=u /home/vllm && \
     # Make /etc/passwd writable for OpenShift arbitrary UIDs
     chmod g+rw /etc/passwd && \
-    # Create a bashrc that handles the username display
+    # Create a bashrc that handles the username display and working directory
     echo 'export PS1="[\u@\h \W]\\$ "' >> /home/vllm/.bashrc && \
+    echo '# Auto-change to vllm-playground directory if it exists' >> /home/vllm/.bashrc && \
+    echo 'if [ -d "/home/vllm/vllm-playground" ]; then' >> /home/vllm/.bashrc && \
+    echo '    cd /home/vllm/vllm-playground' >> /home/vllm/.bashrc && \
+    echo 'elif [ -d "/workspace" ]; then' >> /home/vllm/.bashrc && \
+    echo '    cd /workspace' >> /home/vllm/.bashrc && \
+    echo 'fi' >> /home/vllm/.bashrc && \
     chown 1001:0 /home/vllm/.bashrc && \
     chmod g=u /home/vllm/.bashrc
 
