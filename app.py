@@ -1734,38 +1734,22 @@ async def run_guidellm_benchmark(config: BenchmarkConfig, server_config: VLLMCon
         import json
         import subprocess
         
-        # Find the correct Python executable that has guidellm installed
-        # Since guidellm was successfully imported, find its location and derive the Python path
+        # Use the same Python executable that's running this application
+        # Since guidellm was successfully imported above, it must be in the same environment
         python_exec = sys.executable
+        await broadcast_log(f"[GUIDELLM] Using Python executable: {python_exec}")
         
-        # Get the path to the guidellm module to find the correct Python environment
+        # Get the path to the guidellm module for informational purposes
         guidellm_location = guidellm.__file__
         await broadcast_log(f"[GUIDELLM] Module location: {guidellm_location}")
         
-        # If guidellm is in a venv, derive the correct Python executable from it
-        guidellm_path = Path(guidellm_location)
-        # Typically: venv/lib/pythonX.Y/site-packages/guidellm/__init__.py
-        # We want: venv/bin/python
-        site_packages = None
-        for parent in guidellm_path.parents:
-            if parent.name == "site-packages":
-                site_packages = parent
-                break
-        
-        if site_packages:
-            # Go up from site-packages to find bin directory
-            venv_root = site_packages.parent.parent.parent
-            potential_python = venv_root / "bin" / "python"
-            if potential_python.exists():
-                python_exec = str(potential_python)
-                await broadcast_log(f"[GUIDELLM] Using Python from venv: {python_exec}")
-        
         # Verify guidellm is accessible from this Python
+        # Note: This check is optional - if it fails or times out, we'll still attempt to run
         try:
             check_result = subprocess.run(
                 [python_exec, "-m", "guidellm", "--help"],
                 capture_output=True,
-                timeout=5
+                timeout=30  # Increased timeout for OpenShift compatibility
             )
             if check_result.returncode != 0:
                 # Current python_exec doesn't have guidellm, try finding it in PATH
@@ -1783,25 +1767,18 @@ async def run_guidellm_benchmark(config: BenchmarkConfig, server_config: VLLMCon
                     # Use guidellm directly instead of python -m
                     python_exec = None  # Will use guidellm command directly
                 else:
-                    error_msg = "GuideLLM module is imported but CLI is not accessible. Try reinstalling: pip install guidellm"
-                    logger.error(error_msg)
-                    await broadcast_log(f"[GUIDELLM] ERROR: {error_msg}")
-                    benchmark_results = None
-                    return
+                    await broadcast_log(f"[GUIDELLM] WARNING: GuideLLM CLI verification failed, will attempt to run anyway")
+                    await broadcast_log(f"[GUIDELLM] If benchmark fails, ensure GuideLLM is properly installed: pip install guidellm")
             else:
                 await broadcast_log(f"[GUIDELLM] CLI verified: {python_exec}")
         except subprocess.TimeoutExpired:
-            error_msg = "GuideLLM check timed out"
-            logger.error(error_msg)
-            await broadcast_log(f"[GUIDELLM] ERROR: {error_msg}")
-            benchmark_results = None
-            return
+            # Don't fail - just warn and continue
+            await broadcast_log(f"[GUIDELLM] WARNING: CLI check timed out (30s), will attempt to run benchmark anyway")
+            await broadcast_log(f"[GUIDELLM] If you encounter issues, ensure GuideLLM is installed in your venv: pip install guidellm")
         except Exception as e:
-            error_msg = f"Error checking GuideLLM installation: {e}"
-            logger.error(error_msg)
-            await broadcast_log(f"[GUIDELLM] ERROR: {error_msg}")
-            benchmark_results = None
-            return
+            # Don't fail - just warn and continue
+            await broadcast_log(f"[GUIDELLM] WARNING: Error checking GuideLLM installation: {e}")
+            await broadcast_log(f"[GUIDELLM] Will attempt to run benchmark anyway. Ensure GuideLLM is installed: pip install guidellm")
         
         # Create a temporary JSON file for results
         result_file = tempfile.NamedTemporaryFile(mode='w+', suffix='.json', delete=False)
