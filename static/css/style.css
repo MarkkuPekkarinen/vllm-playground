@@ -132,27 +132,29 @@ body {
     align-items: stretch;
     position: relative;
     width: 100%;
-    overflow: visible;
 }
 
 /* Chat section contains both chat panel and metrics */
 .chat-section {
     display: flex;
     flex-direction: column;
-    height: calc(100vh - 160px);
-    max-height: calc(100vh - 160px);
+    overflow: visible;
+    gap: 10px;
 }
 
 .chat-section .panel {
-    flex: 1 1 auto;
     margin-bottom: 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 550px;
+    max-height: 650px;
+    flex: 1 1 auto;
     overflow: hidden;
-    height: auto;
-    max-height: none;
 }
 
 .chat-metrics-below {
-    flex-shrink: 0;
+    flex: 0 0 auto;
+    width: 100%;
 }
 
 /* Resizable panels */
@@ -163,8 +165,7 @@ body {
 }
 
 .resizable:not(.chat-section) {
-    min-height: 200px;
-    max-height: calc(100vh - 160px);
+    min-width: 250px;
 }
 
 /* Resize handles */
@@ -203,15 +204,30 @@ body {
 
 /* Horizontal resize handle (between main and metrics) */
 .resize-handle-horizontal {
-    height: 4px;
+    height: 8px;
     width: 100%;
     cursor: row-resize;
     position: relative;
-    margin: 30px 0;
+    margin: 20px 0;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
-.resize-handle-horizontal:hover {
+.resize-handle-horizontal::before {
+    content: '';
+    width: 60px;
+    height: 4px;
+    background: var(--border-color);
+    border-radius: 2px;
+    transition: all 0.2s;
+}
+
+.resize-handle-horizontal:hover::before {
+    width: 100px;
     height: 6px;
+    background: var(--primary-color);
 }
 
 /* Prevent text selection during resize */
@@ -229,19 +245,22 @@ body {
 .sidebar {
     width: 420px;
     flex-shrink: 0;
-    overflow: visible;
+    min-width: 300px;
+    height: 1000px;
 }
 
 .chat-section {
     flex: 1;
     min-width: 300px;
-    overflow: hidden;
+    height: 1000px;
+    overflow-y: auto;
 }
 
 .logs-section {
     width: 400px;
     flex-shrink: 0;
-    overflow: visible;
+    min-width: 300px;
+    height: 1000px;
 }
 
 .metrics-section {
@@ -249,25 +268,67 @@ body {
     min-height: 200px;
 }
 
+@media (max-width: 1600px) {
+    .sidebar {
+        width: 380px;
+        min-width: 280px;
+    }
+    
+    .logs-section {
+        width: 380px;
+        min-width: 280px;
+    }
+}
+
 @media (max-width: 1400px) {
     .sidebar {
         width: 350px;
+        min-width: 250px;
     }
     
     .logs-section {
         width: 350px;
+        min-width: 250px;
+    }
+}
+
+@media (max-width: 1200px) {
+    .sidebar {
+        width: 320px;
+        min-width: 250px;
+    }
+    
+    .logs-section {
+        width: 320px;
+        min-width: 250px;
+    }
+    
+    .panel {
+        padding: 20px;
     }
 }
 
 @media (max-width: 1024px) {
     .main-content {
         flex-direction: column;
+        overflow-y: auto;
     }
     
     .sidebar,
     .chat-section,
     .logs-section {
         width: 100% !important;
+        min-width: 100% !important;
+        flex: 0 0 auto;
+    }
+    
+    .panel {
+        min-height: 400px;
+        max-height: none;
+    }
+    
+    .chat-section .panel {
+        min-height: 500px;
     }
 }
 
@@ -277,12 +338,11 @@ body {
     border-radius: 12px;
     padding: 25px;
     box-shadow: var(--shadow);
-    height: calc(100vh - 160px);
-    max-height: calc(100vh - 160px);
     display: flex;
     flex-direction: column;
     margin: 0 10px;
-    overflow: auto;
+    height: 100%;
+    overflow: hidden;
 }
 
 .panel h2 {
@@ -305,6 +365,13 @@ body {
 /* Sidebar - Configuration */
 .sidebar .panel {
     overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* Logs Section Panel */
+.logs-section .panel {
+    overflow-y: hidden;
+    overflow-x: hidden;
 }
 
 .form-group {
@@ -668,19 +735,15 @@ body {
 }
 
 /* Chat Section */
-.chat-section {
-    min-height: 500px;
-}
-
 .chat-container {
     flex: 1 1 auto;
-    overflow-y: auto;
-    margin-bottom: 20px;
+    margin-bottom: 15px;
     padding: 15px;
     background: var(--bg-primary);
     border-radius: 8px;
     min-height: 200px;
-    max-height: calc(100vh - 500px);
+    overflow-y: auto;
+    overflow-x: hidden;
 }
 
 .chat-message {
@@ -724,8 +787,8 @@ body {
 }
 
 .chat-input-area {
-    margin-top: auto;
     flex-shrink: 0;
+    margin-top: auto;
 }
 
 /* System Prompt Section */
@@ -887,14 +950,15 @@ body {
 /* Logs Section */
 .logs-container {
     flex: 1 1 auto;
-    overflow-y: auto;
     padding: 15px;
     background: var(--bg-primary);
     border-radius: 8px;
     font-family: 'Monaco', 'Courier New', monospace;
     font-size: 0.85rem;
     line-height: 1.5;
-    max-height: calc(100vh - 350px);
+    min-height: 200px;
+    overflow-y: auto;
+    overflow-x: hidden;
 }
 
 .log-entry {
@@ -1002,37 +1066,46 @@ body {
 .chat-metrics-below {
     background: var(--bg-secondary);
     border-radius: 12px;
-    padding: 15px;
+    padding: 20px;
     margin: 10px;
     box-shadow: var(--shadow);
-    flex-shrink: 0;
+    flex: 0 0 auto;
+    min-height: 280px;
+    max-height: 320px;
+    overflow-y: auto;
 }
 
 .chat-metrics-below .panel-header {
-    margin-bottom: 15px;
-    padding-bottom: 10px;
-    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--border-color);
 }
 
 .chat-metrics-below .panel-header h3 {
-    font-size: 1rem;
-    font-weight: 600;
+    font-size: 1.1rem;
+    font-weight: 700;
     color: var(--text-primary);
     margin: 0;
+    letter-spacing: 0.5px;
 }
 
 .chat-metrics-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 15px;
+    max-width: 100%;
 }
 
 .chat-metric-item {
     background: var(--bg-primary);
     border-radius: 8px;
-    padding: 12px;
+    padding: 15px;
     border: 1px solid var(--border-color);
     transition: all 0.3s;
+    min-height: 85px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
 }
 
 .chat-metric-item:hover {
@@ -1042,20 +1115,22 @@ body {
 
 .chat-metric-item .metric-label {
     display: block;
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    margin-bottom: 5px;
+    margin-bottom: 8px;
     font-weight: 600;
+    line-height: 1.3;
 }
 
 .chat-metric-item .metric-value {
     display: block;
-    font-size: 1.2rem;
+    font-size: 1.3rem;
     font-weight: 700;
     color: var(--success-color);
     font-family: 'Monaco', 'Courier New', monospace;
+    line-height: 1.2;
 }
 
 .chat-metric-item .metric-value.updated {
@@ -1072,7 +1147,23 @@ body {
 }
 
 /* Responsive Design */
+@media (max-width: 1200px) {
+    .chat-metrics-grid {
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 12px;
+    }
+}
+
 @media (max-width: 768px) {
+    .container {
+        padding: 10px;
+    }
+    
+    .header {
+        padding: 15px 20px;
+        margin-bottom: 15px;
+    }
+    
     .header h1 {
         font-size: 1.5rem;
     }
@@ -1089,6 +1180,30 @@ body {
     .chat-message.assistant {
         margin-left: 0;
         margin-right: 0;
+    }
+    
+    .panel {
+        padding: 15px;
+        margin: 0 5px;
+    }
+    
+    .chat-metrics-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+    }
+    
+    .chat-metric-item {
+        padding: 12px;
+        min-height: 75px;
+    }
+    
+    .chat-metric-item .metric-label {
+        font-size: 0.65rem;
+        margin-bottom: 6px;
+    }
+    
+    .chat-metric-item .metric-value {
+        font-size: 1.1rem;
     }
 }
 

@@ -41,6 +41,9 @@ Thumbs.db
 *.log
 logs/
 
+# Process management
+.vllm_playground.pid
+
 # Environment variables
 .env
 .env.local
