@@ -2390,54 +2390,9 @@ body {
     }
 }
 
-/* Section Toggle Button */
-.section-toggle-btn {
-    min-width: 40px;
-    width: 40px;
-    height: 32px;
-    padding: 0;
-    font-size: 1rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.3s ease;
-}
-
-.section-toggle-btn:hover {
-    background: var(--primary-color);
-    transform: scale(1.05);
-}
-
-.section-toggle-btn.collapsed {
-    transform: rotate(0deg);
-}
-
-/* Smooth transition for collapsible content */
+/* Section content styling */
 #compression-section-content,
 #metrics-section-content {
-    transition: opacity 0.3s ease;
     overflow: visible;
     height: auto;
-}
-
-/* Collapsed section styling */
-.compression-section.section-collapsed,
-.metrics-section.section-collapsed {
-    min-height: auto !important;
-    max-height: none !important;
-    height: auto !important;
-    flex: 0 0 auto !important;
-}
-
-.compression-section.section-collapsed .panel,
-.metrics-section.section-collapsed .panel {
-    height: auto !important;
-    max-height: none !important;
-    min-height: auto !important;
-}
-
-/* Section transitions */
-.compression-section,
-.metrics-section {
-    transition: all 0.3s ease;
 }

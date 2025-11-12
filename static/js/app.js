@@ -134,9 +134,7 @@ class VLLMWebUI {
             copyGuidellmJsonBtn: document.getElementById('copy-guidellm-json-btn'),
             toggleJsonOutputBtn: document.getElementById('toggle-json-output-btn'),
             guidellmJsonOutputContent: document.getElementById('guidellm-json-output-content'),
-            toggleCompressionSectionBtn: document.getElementById('toggle-compression-section-btn'),
             compressionSectionContent: document.getElementById('compression-section-content'),
-            toggleMetricsSectionBtn: document.getElementById('toggle-metrics-section-btn'),
             metricsSectionContent: document.getElementById('metrics-section-content'),
             metricsDisplay: document.getElementById('metrics-display'),
             metricsGrid: document.getElementById('metrics-grid'),
@@ -342,10 +340,6 @@ class VLLMWebUI {
         this.elements.toggleRawOutputBtn.addEventListener('click', () => this.toggleRawOutput());
         this.elements.copyGuidellmJsonBtn.addEventListener('click', () => this.copyGuidellmJson());
         this.elements.toggleJsonOutputBtn.addEventListener('click', () => this.toggleJsonOutput());
-        
-        // Section toggles
-        this.elements.toggleCompressionSectionBtn.addEventListener('click', () => this.toggleCompressionSection());
-        this.elements.toggleMetricsSectionBtn.addEventListener('click', () => this.toggleMetricsSection());
         
         // Compression
         this.elements.runCompressionBtn.addEventListener('click', () => this.runCompression());
@@ -2955,41 +2949,6 @@ class VLLMWebUI {
         }
     }
 
-    toggleCompressionSection() {
-        const content = this.elements.compressionSectionContent;
-        const btn = this.elements.toggleCompressionSectionBtn;
-        const panel = document.querySelector('#compression-panel');
-        
-        if (content.style.display === 'none') {
-            content.style.display = 'block';
-            btn.textContent = '▼';
-            btn.classList.remove('collapsed');
-            if (panel) panel.classList.remove('section-collapsed');
-        } else {
-            content.style.display = 'none';
-            btn.textContent = '▶';
-            btn.classList.add('collapsed');
-            if (panel) panel.classList.add('section-collapsed');
-        }
-    }
-
-    toggleMetricsSection() {
-        const content = this.elements.metricsSectionContent;
-        const btn = this.elements.toggleMetricsSectionBtn;
-        const panel = document.querySelector('#metrics-panel');
-        
-        if (content.style.display === 'none') {
-            content.style.display = 'block';
-            btn.textContent = '▼';
-            btn.classList.remove('collapsed');
-            if (panel) panel.classList.remove('section-collapsed');
-        } else {
-            content.style.display = 'none';
-            btn.textContent = '▶';
-            btn.classList.add('collapsed');
-            if (panel) panel.classList.add('section-collapsed');
-        }
-    }
 
     async copyGuidellmJson() {
         const jsonOutput = document.getElementById('guidellm-json-output');
