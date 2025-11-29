@@ -283,6 +283,11 @@ nano config/vllm_cpu.env
   - CPU and GPU mode support
   - RBAC-based security
   - Automated deployment scripts
+- **🎯 Intelligent Hardware Detection**: Automatic GPU availability detection 🆕
+  - Kubernetes-native: Queries cluster nodes for `nvidia.com/gpu` resources
+  - Automatic UI adaptation: GPU mode enabled/disabled based on availability
+  - No nvidia-smi required: Uses Kubernetes API for detection
+  - Fallback support: nvidia-smi detection for local environments
 - **Performance Benchmarking**: GuideLLM integration for comprehensive load testing with detailed metrics
   - Request statistics (success rate, duration, avg times)
   - Token throughput analysis (mean/median tokens per second)
@@ -459,13 +464,14 @@ Contributions welcome! Please feel free to submit issues and pull requests.
          ↓
 ┌──────────────────┐
 │  Web UI Pod      │  ← FastAPI app in container
-│  (Deployment)    │
+│  (Deployment)    │  ← Auto-detects GPU availability
 └────────┬─────────┘
          │ Kubernetes API
+         │ (reads nodes, creates/deletes pods)
          ↓
 ┌──────────────────┐
 │   kubernetes_    │  ← K8s API orchestration
-│   container_     │
+│   container_     │  ← Checks nvidia.com/gpu resources
 │   manager.py     │
 └────────┬─────────┘
          │ create/delete pods
@@ -486,6 +492,10 @@ Contributions welcome! Please feel free to submit issues and pull requests.
 - Container manager is swapped at build time (Podman → Kubernetes)
 - Identical user experience locally and in the cloud
 - Smart container/pod lifecycle management
+- **Automatic GPU detection**: UI adapts based on cluster hardware
+  - Kubernetes-native: Queries nodes for `nvidia.com/gpu` resources
+  - Automatic mode selection: GPU mode disabled if no GPUs available
+  - RBAC-secured: Requires node read permissions (automatically configured)
 - No registry authentication needed (all images are publicly accessible)
 
 ---
@@ -536,6 +546,42 @@ podman pull quay.io/rh_ee_micyang/vllm-service:macos
 ```
 
 ### OpenShift/Kubernetes Issues
+
+#### GPU Mode Not Available
+
+The Web UI automatically detects GPU availability by querying Kubernetes nodes for `nvidia.com/gpu` resources. If GPU mode is disabled in the UI:
+
+**Check GPU availability in your cluster:**
+```bash
+# List nodes with GPU capacity
+oc get nodes -o custom-columns=NAME:.metadata.name,GPU:.status.capacity.nvidia\.com/gpu
+
+# Or check all node details
+oc describe nodes | grep nvidia.com/gpu
+```
+
+**If GPUs exist but not detected:**
+1. Verify RBAC permissions:
+```bash
+# Check if service account has node read permissions
+oc auth can-i list nodes --as=system:serviceaccount:vllm-playground:vllm-playground-sa
+# Should return "yes"
+```
+
+2. Reapply RBAC if needed:
+```bash
+oc apply -f openshift/manifests/02-rbac.yaml
+```
+
+3. Check Web UI logs for detection errors:
+```bash
+oc logs -f deployment/vllm-playground-cpu -n vllm-playground | grep -i gpu
+```
+
+**Expected behavior:**
+- **GPU available**: Both CPU and GPU modes enabled in UI
+- **No GPU**: GPU mode automatically disabled, forced to CPU-only mode
+- **Detection method logged**: Check logs for "GPU detected via Kubernetes API" or "No GPUs found"
 
 #### Pod Not Starting
 ```bash

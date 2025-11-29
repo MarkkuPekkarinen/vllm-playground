@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 import sys
+import subprocess
 import tempfile
 import shutil
 from datetime import datetime
@@ -642,6 +643,87 @@ async def get_features():
         pass
     
     return features
+
+
+@app.get("/api/hardware-capabilities")
+async def get_hardware_capabilities():
+    """
+    Check GPU availability
+    
+    This endpoint checks if GPU hardware is available in the cluster.
+    For Kubernetes/OpenShift: Checks node resources for nvidia.com/gpu
+    For local/container: Falls back to nvidia-smi check
+    """
+    gpu_available = False
+    detection_method = "none"
+    
+    # First, try Kubernetes API if we're in a K8s environment
+    if os.getenv('KUBERNETES_NAMESPACE'):
+        try:
+            from kubernetes import client, config
+            
+            # Load in-cluster config
+            config.load_incluster_config()
+            v1 = client.CoreV1Api()
+            
+            # List all nodes and check for GPU resources
+            nodes = v1.list_node()
+            for node in nodes.items:
+                # Check node capacity for nvidia.com/gpu
+                if node.status and node.status.capacity:
+                    gpu_capacity = node.status.capacity.get('nvidia.com/gpu', '0')
+                    if gpu_capacity and int(gpu_capacity) > 0:
+                        gpu_available = True
+                        detection_method = "kubernetes"
+                        logger.info(f"GPU detected via Kubernetes API: {node.metadata.name} has {gpu_capacity} GPUs")
+                        break
+                
+                # Also check node labels for GPU indicators
+                if node.metadata and node.metadata.labels:
+                    labels = node.metadata.labels
+                    if any('gpu' in k.lower() or 'nvidia' in k.lower() for k in labels.keys()):
+                        # Double-check with capacity to avoid false positives
+                        if node.status and node.status.capacity:
+                            gpu_capacity = node.status.capacity.get('nvidia.com/gpu', '0')
+                            if gpu_capacity and int(gpu_capacity) > 0:
+                                gpu_available = True
+                                detection_method = "kubernetes"
+                                logger.info(f"GPU detected via node labels: {node.metadata.name}")
+                                break
+            
+            if not gpu_available:
+                logger.info("No GPUs found in Kubernetes cluster nodes")
+                
+        except ImportError:
+            logger.info("Kubernetes client not available - skipping K8s GPU check")
+        except Exception as e:
+            logger.warning(f"Error checking GPU via Kubernetes API: {e}")
+    
+    # Fallback: Try nvidia-smi for local/container environments
+    if not gpu_available and not os.getenv('KUBERNETES_NAMESPACE'):
+        try:
+            result = subprocess.run(
+                ['nvidia-smi', '--query-gpu=name', '--format=csv,noheader'],
+                capture_output=True,
+                text=True,
+                timeout=2
+            )
+            if result.returncode == 0 and bool(result.stdout.strip()):
+                gpu_available = True
+                detection_method = "nvidia-smi"
+                logger.info(f"GPU detected via nvidia-smi: {result.stdout.strip()}")
+        except FileNotFoundError:
+            logger.info("nvidia-smi not found - no local GPU detected")
+        except subprocess.TimeoutExpired:
+            logger.warning("nvidia-smi timeout")
+        except Exception as e:
+            logger.warning(f"Error checking GPU via nvidia-smi: {e}")
+    
+    logger.info(f"Final GPU availability: {gpu_available} (method: {detection_method})")
+    return {
+        "gpu_available": gpu_available,
+        "detection_method": detection_method
+    }
 
 
 @app.post("/api/start")
