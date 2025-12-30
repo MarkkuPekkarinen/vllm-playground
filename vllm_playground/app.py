@@ -11,7 +11,7 @@ import subprocess
 import tempfile
 import shutil
 from datetime import datetime
-from typing import Optional, List, Dict, Any, Literal
+from typing import Optional, List, Dict, Any, Literal, Union
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
@@ -29,16 +29,11 @@ logger = logging.getLogger(__name__)
 
 # Import container manager (optional - only needed for container mode)
 try:
-    from .container_manager import container_manager
+    from container_manager import container_manager
     CONTAINER_MODE_AVAILABLE = True
 except ImportError:
-    try:
-        # Fallback for running as standalone script
-        from container_manager import container_manager
-        CONTAINER_MODE_AVAILABLE = True
-    except ImportError:
-        CONTAINER_MODE_AVAILABLE = False
-        logger.warning("container_manager not available - container mode will be disabled")
+    CONTAINER_MODE_AVAILABLE = False
+    logger.warning("container_manager not available - container mode will be disabled")
 
 app = FastAPI(title="vLLM Playground", version="1.0.0")
 
@@ -96,10 +91,36 @@ class VLLMConfig(BaseModel):
     gpu_device: Optional[str] = None
 
 
+class ToolFunction(BaseModel):
+    """Function definition within a tool"""
+    name: str
+    description: Optional[str] = None
+    parameters: Optional[Dict[str, Any]] = None  # JSON Schema for parameters
+
+
+class Tool(BaseModel):
+    """Tool definition for function calling (OpenAI-compatible)"""
+    type: str = "function"  # Currently only "function" is supported
+    function: ToolFunction
+
+
+class ToolCall(BaseModel):
+    """Tool call made by the assistant"""
+    id: str
+    type: str = "function"
+    function: Dict[str, str]  # {"name": "...", "arguments": "..."}
+
+
 class ChatMessage(BaseModel):
-    """Chat message structure"""
-    role: str
-    content: str
+    """Chat message structure with tool calling support"""
+    role: str  # "system", "user", "assistant", or "tool"
+    content: Optional[str] = None  # Can be None when assistant makes tool calls
+    # For assistant messages with tool calls
+    tool_calls: Optional[List[ToolCall]] = None
+    # For tool response messages
+    tool_call_id: Optional[str] = None  # Required when role="tool"
+    # Optional name field (used in some contexts)
+    name: Optional[str] = None
 
 
 class ChatRequest(BaseModel):
@@ -580,8 +601,7 @@ async def debug_connection():
             debug_info["url_would_use"] = url
             debug_info["connection_mode"] = "kubernetes_service"
         else:
-            connect_host = "localhost" if current_config.host == "0.0.0.0" else current_config.host
-            url = f"http://{connect_host}:{current_config.port}/v1/chat/completions"
+            url = f"http://{current_config.host}:{current_config.port}/v1/chat/completions"
             debug_info["url_would_use"] = url
             debug_info["connection_mode"] = "localhost"
     
@@ -610,8 +630,7 @@ async def test_vllm_connection():
         namespace = getattr(container_manager, 'namespace', os.getenv('KUBERNETES_NAMESPACE', 'default'))
         base_url = f"http://{service_name}.{namespace}.svc.cluster.local:{current_config.port}"
     else:
-        connect_host = "localhost" if current_config.host == "0.0.0.0" else current_config.host
-        base_url = f"http://{connect_host}:{current_config.port}"
+        base_url = f"http://{current_config.host}:{current_config.port}"
     
     health_url = f"{base_url}/health"
     
@@ -1371,13 +1390,25 @@ async def websocket_logs(websocket: WebSocket):
             websocket_connections.remove(websocket)
 
 
+class ToolChoice(BaseModel):
+    """Specific tool choice when tool_choice is an object"""
+    type: str = "function"
+    function: Dict[str, str]  # {"name": "function_name"}
+
+
 class ChatRequestWithStopTokens(BaseModel):
-    """Chat request structure with optional stop tokens override"""
+    """Chat request structure with optional stop tokens override and tool calling support"""
     messages: List[ChatMessage]
     temperature: float = 0.7
     max_tokens: int = 256
     stream: bool = True
     stop_tokens: Optional[List[str]] = None  # Allow overriding stop tokens per request
+    
+    # Tool/Function Calling Support (OpenAI-compatible)
+    # See: https://platform.openai.com/docs/guides/function-calling
+    tools: Optional[List[Tool]] = None  # List of available tools/functions
+    tool_choice: Optional[Union[str, ToolChoice]] = None  # "auto", "none", "required", or specific tool
+    parallel_tool_calls: Optional[bool] = None  # Allow multiple tool calls in one response
 
 
 @app.post("/api/chat")
@@ -1425,16 +1456,40 @@ async def chat(request: ChatRequestWithStopTokens):
             logger.info(f"  Port: {current_config.port}")
         else:
             # Subprocess mode or local container mode - connect to localhost
-            # Note: Always use localhost/127.0.0.1 for connection, not 0.0.0.0
-            # 0.0.0.0 is for binding, not connecting
-            connect_host = "localhost" if current_config.host == "0.0.0.0" else current_config.host
-            url = f"http://{connect_host}:{current_config.port}/v1/chat/completions"
+            url = f"http://{current_config.host}:{current_config.port}/v1/chat/completions"
             logger.info(f"✓ Using localhost URL: {url}")
         
         logger.info(f"=====================================")
         
-        # Convert messages to OpenAI format
-        messages_dict = [{"role": m.role, "content": m.content} for m in request.messages]
+        # Convert messages to OpenAI format with full tool calling support
+        messages_dict = []
+        for m in request.messages:
+            msg = {"role": m.role}
+            
+            # Content can be None for assistant messages with tool_calls
+            if m.content is not None:
+                msg["content"] = m.content
+            
+            # Include tool_calls for assistant messages
+            if m.tool_calls:
+                msg["tool_calls"] = [
+                    {
+                        "id": tc.id,
+                        "type": tc.type,
+                        "function": tc.function
+                    }
+                    for tc in m.tool_calls
+                ]
+            
+            # Include tool_call_id for tool response messages
+            if m.tool_call_id:
+                msg["tool_call_id"] = m.tool_call_id
+            
+            # Include name if provided
+            if m.name:
+                msg["name"] = m.name
+            
+            messages_dict.append(msg)
         
         # Build payload for OpenAI-compatible endpoint
         # Use current_model_identifier (actual path or HF model) instead of config.model
@@ -1445,6 +1500,41 @@ async def chat(request: ChatRequestWithStopTokens):
             "max_tokens": request.max_tokens,
             "stream": request.stream,
         }
+        
+        # Tool/Function Calling Support
+        # Add tools if provided
+        if request.tools:
+            payload["tools"] = [
+                {
+                    "type": tool.type,
+                    "function": {
+                        "name": tool.function.name,
+                        "description": tool.function.description,
+                        "parameters": tool.function.parameters or {"type": "object", "properties": {}}
+                    }
+                }
+                for tool in request.tools
+            ]
+            logger.info(f"🔧 Tools enabled: {[t.function.name for t in request.tools]}")
+        
+        # Add tool_choice if provided
+        if request.tool_choice is not None:
+            if isinstance(request.tool_choice, str):
+                # String values: "auto", "none", "required"
+                payload["tool_choice"] = request.tool_choice
+                logger.info(f"🔧 Tool choice: {request.tool_choice}")
+            else:
+                # Specific tool choice object
+                payload["tool_choice"] = {
+                    "type": request.tool_choice.type,
+                    "function": request.tool_choice.function
+                }
+                logger.info(f"🔧 Tool choice: specific function - {request.tool_choice.function}")
+        
+        # Add parallel_tool_calls if provided
+        if request.parallel_tool_calls is not None:
+            payload["parallel_tool_calls"] = request.parallel_tool_calls
+            logger.info(f"🔧 Parallel tool calls: {request.parallel_tool_calls}")
         
         # Stop tokens handling:
         # By default, trust vLLM to use appropriate stop tokens from the model's tokenizer
@@ -1582,8 +1672,17 @@ async def chat(request: ChatRequestWithStopTokens):
                     if 'choices' in data and len(data['choices']) > 0:
                         message = data['choices'][0].get('message', {})
                         content = message.get('content', '')
-                        logger.info(f"Response text: {content}")
-                        logger.info(f"Length: {len(content)} chars")
+                        tool_calls = message.get('tool_calls', [])
+                        
+                        if content:
+                            logger.info(f"Response text: {content}")
+                            logger.info(f"Length: {len(content)} chars")
+                        
+                        if tool_calls:
+                            logger.info(f"🔧 Tool calls detected: {len(tool_calls)}")
+                            for tc in tool_calls:
+                                func = tc.get('function', {})
+                                logger.info(f"  - {func.get('name', 'unknown')}: {func.get('arguments', '{}')}")
                     logger.info(f"=====================================")
                     return data
     
@@ -1597,6 +1696,308 @@ class CompletionRequest(BaseModel):
     prompt: str
     temperature: float = 0.7
     max_tokens: int = 256
+
+
+class ToolValidationRequest(BaseModel):
+    """Request to validate a tool definition"""
+    tools: List[Tool]
+
+
+@app.post("/api/tools/validate")
+async def validate_tools(request: ToolValidationRequest):
+    """
+    Validate tool definitions for correctness.
+    
+    Checks:
+    - Tool type is "function"
+    - Function name is valid (alphanumeric + underscore)
+    - Parameters follow JSON Schema format
+    
+    Returns validation results with any errors found.
+    """
+    import re
+    
+    results = []
+    valid_name_pattern = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
+    
+    for tool in request.tools:
+        tool_result = {
+            "name": tool.function.name,
+            "valid": True,
+            "errors": [],
+            "warnings": []
+        }
+        
+        # Check tool type
+        if tool.type != "function":
+            tool_result["errors"].append(f"Invalid tool type: '{tool.type}'. Only 'function' is supported.")
+            tool_result["valid"] = False
+        
+        # Check function name
+        if not valid_name_pattern.match(tool.function.name):
+            tool_result["errors"].append(f"Invalid function name: '{tool.function.name}'. Must start with letter/underscore and contain only alphanumeric characters.")
+            tool_result["valid"] = False
+        
+        # Check for description
+        if not tool.function.description:
+            tool_result["warnings"].append("Missing function description. Models perform better with clear descriptions.")
+        
+        # Check parameters schema
+        if tool.function.parameters:
+            params = tool.function.parameters
+            
+            # Check for type field
+            if "type" not in params:
+                tool_result["warnings"].append("Parameters schema missing 'type' field. Should be 'object'.")
+            elif params["type"] != "object":
+                tool_result["warnings"].append(f"Parameters type is '{params['type']}'. Usually should be 'object'.")
+            
+            # Check for properties
+            if params.get("type") == "object" and "properties" not in params:
+                tool_result["warnings"].append("Parameters schema missing 'properties' field.")
+            
+            # Check required fields
+            if "required" in params:
+                required = params["required"]
+                properties = params.get("properties", {})
+                for req_field in required:
+                    if req_field not in properties:
+                        tool_result["errors"].append(f"Required field '{req_field}' not found in properties.")
+                        tool_result["valid"] = False
+        
+        results.append(tool_result)
+    
+    all_valid = all(r["valid"] for r in results)
+    
+    return {
+        "valid": all_valid,
+        "tool_count": len(request.tools),
+        "results": results
+    }
+
+
+@app.get("/api/tools/presets")
+async def get_tool_presets():
+    """
+    Get predefined tool presets for common use cases.
+    
+    These presets provide ready-to-use tool definitions that can be
+    loaded directly into the chat interface.
+    """
+    presets = {
+        "weather": {
+            "name": "Weather Tools",
+            "description": "Get weather information for locations",
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "get_current_weather",
+                        "description": "Get the current weather in a given location",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "location": {
+                                    "type": "string",
+                                    "description": "The city and state, e.g. San Francisco, CA"
+                                },
+                                "unit": {
+                                    "type": "string",
+                                    "enum": ["celsius", "fahrenheit"],
+                                    "description": "Temperature unit"
+                                }
+                            },
+                            "required": ["location"]
+                        }
+                    }
+                }
+            ]
+        },
+        "calculator": {
+            "name": "Calculator Tools",
+            "description": "Perform mathematical calculations",
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "calculate",
+                        "description": "Evaluate a mathematical expression",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "expression": {
+                                    "type": "string",
+                                    "description": "The mathematical expression to evaluate, e.g. '2 + 2 * 3'"
+                                }
+                            },
+                            "required": ["expression"]
+                        }
+                    }
+                }
+            ]
+        },
+        "search": {
+            "name": "Search Tools",
+            "description": "Search for information",
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "web_search",
+                        "description": "Search the web for information",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "query": {
+                                    "type": "string",
+                                    "description": "The search query"
+                                },
+                                "num_results": {
+                                    "type": "integer",
+                                    "description": "Number of results to return",
+                                    "default": 5
+                                }
+                            },
+                            "required": ["query"]
+                        }
+                    }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "get_page_content",
+                        "description": "Get the content of a web page",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "url": {
+                                    "type": "string",
+                                    "description": "The URL to fetch"
+                                }
+                            },
+                            "required": ["url"]
+                        }
+                    }
+                }
+            ]
+        },
+        "code_execution": {
+            "name": "Code Execution Tools",
+            "description": "Execute code in various languages",
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "execute_python",
+                        "description": "Execute Python code and return the output",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "code": {
+                                    "type": "string",
+                                    "description": "The Python code to execute"
+                                }
+                            },
+                            "required": ["code"]
+                        }
+                    }
+                }
+            ]
+        },
+        "database": {
+            "name": "Database Tools",
+            "description": "Query and manipulate database records",
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "query_database",
+                        "description": "Execute a SQL query on the database",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "query": {
+                                    "type": "string",
+                                    "description": "The SQL query to execute"
+                                },
+                                "database": {
+                                    "type": "string",
+                                    "description": "The database name to query"
+                                }
+                            },
+                            "required": ["query"]
+                        }
+                    }
+                }
+            ]
+        }
+    }
+    
+    return {
+        "presets": presets,
+        "count": len(presets)
+    }
+
+
+@app.get("/api/tools/info")
+async def get_tools_info():
+    """
+    Get information about tool calling support.
+    
+    Returns:
+    - Models known to support tool calling well
+    - Required vLLM version
+    - Usage tips
+    """
+    return {
+        "supported": True,
+        "vllm_version_required": "0.4.0+",
+        "openai_compatible": True,
+        "recommended_models": [
+            {
+                "name": "Llama 3.1/3.2",
+                "model_ids": [
+                    "meta-llama/Llama-3.1-8B-Instruct",
+                    "meta-llama/Llama-3.1-70B-Instruct",
+                    "meta-llama/Llama-3.2-1B-Instruct",
+                    "meta-llama/Llama-3.2-3B-Instruct"
+                ],
+                "notes": "Excellent native tool calling support with <|python_tag|> format"
+            },
+            {
+                "name": "Mistral/Mixtral",
+                "model_ids": [
+                    "mistralai/Mistral-7B-Instruct-v0.3",
+                    "mistralai/Mixtral-8x7B-Instruct-v0.1"
+                ],
+                "notes": "Good tool calling with [TOOL_CALLS] format"
+            },
+            {
+                "name": "Qwen 2.5",
+                "model_ids": [
+                    "Qwen/Qwen2.5-7B-Instruct",
+                    "Qwen/Qwen2.5-72B-Instruct"
+                ],
+                "notes": "Strong tool calling and code generation"
+            },
+            {
+                "name": "Hermes 2 Pro",
+                "model_ids": [
+                    "NousResearch/Hermes-2-Pro-Llama-3-8B",
+                    "NousResearch/Hermes-2-Pro-Mistral-7B"
+                ],
+                "notes": "Fine-tuned specifically for function calling"
+            }
+        ],
+        "usage_tips": [
+            "Use 'tool_choice': 'auto' to let the model decide when to use tools",
+            "Use 'tool_choice': 'required' to force tool usage",
+            "Use 'tool_choice': 'none' to disable tool usage for a request",
+            "Provide clear, detailed descriptions for better tool selection",
+            "Include parameter descriptions for more accurate argument generation",
+            "For multi-step tasks, set 'parallel_tool_calls': true"
+        ]
+    }
 
 
 @app.post("/api/completion")
@@ -1633,9 +2034,7 @@ async def completion(request: CompletionRequest):
             logger.info(f"Using Kubernetes service URL: {url}")
         else:
             # Subprocess mode or local container mode - connect to localhost
-            # Note: Always use localhost/127.0.0.1 for connection, not 0.0.0.0
-            connect_host = "localhost" if current_config.host == "0.0.0.0" else current_config.host
-            url = f"http://{connect_host}:{current_config.port}/v1/completions"
+            url = f"http://{current_config.host}:{current_config.port}/v1/completions"
             logger.info(f"Using localhost URL: {url}")
         
         payload = {
@@ -2331,6 +2730,45 @@ async def get_chat_template():
         }
 
 
+@app.get("/api/vllm/health")
+async def check_vllm_health():
+    """Check if the vLLM server is healthy and ready to serve requests"""
+    global current_config, vllm_process, current_run_mode
+    
+    # Check if server is running
+    if current_run_mode == "container":
+        status = await container_manager.get_container_status()
+        if not status.get('running', False):
+            return {"success": False, "status_code": 503, "error": "Server not running"}
+    elif current_run_mode == "subprocess":
+        if vllm_process is None or vllm_process.returncode is not None:
+            return {"success": False, "status_code": 503, "error": "Server not running"}
+    
+    if current_config is None:
+        return {"success": False, "status_code": 503, "error": "No configuration"}
+    
+    # Try to call vLLM's health endpoint
+    try:
+        import aiohttp
+        
+        if current_run_mode == "container":
+            base_url = f"http://localhost:{current_config.port}"
+        else:
+            base_url = f"http://{current_config.host}:{current_config.port}"
+        
+        health_url = f"{base_url}/health"
+        
+        timeout = aiohttp.ClientTimeout(total=3)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(health_url) as response:
+                if response.status == 200:
+                    return {"success": True, "status_code": 200, "message": "Server is healthy"}
+                else:
+                    return {"success": False, "status_code": response.status, "error": "Health check failed"}
+    except Exception as e:
+        return {"success": False, "status_code": 503, "error": str(e)}
+
+
 @app.get("/api/vllm/metrics")
 async def get_vllm_metrics():
     """Get vLLM server metrics including KV cache and prefix cache stats"""
@@ -2390,8 +2828,7 @@ async def get_vllm_metrics():
             metrics_url = f"http://{service_name}.{namespace}.svc.cluster.local:{current_config.port}/metrics"
         else:
             # Subprocess mode or local container mode - connect to localhost
-            connect_host = "localhost" if current_config.host == "0.0.0.0" else current_config.host
-            metrics_url = f"http://{connect_host}:{current_config.port}/metrics"
+            metrics_url = f"http://{current_config.host}:{current_config.port}/metrics"
         
         async with aiohttp.ClientSession() as session:
             try:
@@ -2941,26 +3378,18 @@ async def run_guidellm_benchmark(config: BenchmarkConfig, server_config: VLLMCon
 
 
 
-def main(host: str = None, port: int = None, reload: bool = False):
-    """Main entry point
-    
-    Args:
-        host: Host to bind to (default: from WEBUI_HOST env or 0.0.0.0)
-        port: Port to listen on (default: from WEBUI_PORT env or 7860)
-        reload: Enable auto-reload for development (default: False)
-    """
+def main():
+    """Main entry point"""
     logger.info("Starting vLLM Playground...")
     
-    # Get settings from environment or use defaults, CLI args take precedence
-    webui_host = host or os.environ.get("WEBUI_HOST", "0.0.0.0")
-    webui_port = port or int(os.environ.get("WEBUI_PORT", "7860"))
+    # Get port from environment or use default
+    webui_port = int(os.environ.get("WEBUI_PORT", "7860"))
     
     uvicorn.run(
         app,
-        host=webui_host,
+        host="0.0.0.0",
         port=webui_port,
-        log_level="info",
-        reload=reload
+        log_level="info"
     )
 
 

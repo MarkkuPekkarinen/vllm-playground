@@ -5,6 +5,7 @@ class VLLMWebUI {
         this.chatHistory = [];
         this.serverRunning = false;
         this.serverReady = false;  // Track if server startup is complete
+        this.healthCheckStarted = false;  // Track if health check polling is active
         this.autoScroll = true;
         this.benchmarkRunning = false;
         this.benchmarkPollInterval = null;
@@ -20,6 +21,13 @@ class VLLMWebUI {
         // Template edit timeouts
         this.stopTokensEditTimeout = null;
         this.chatTemplateEditTimeout = null;
+        
+        // Tool calling state
+        this.tools = [];  // Array of tool definitions
+        this.editingToolIndex = -1;  // Index of tool being edited, -1 for new tool
+        
+        // Theme state
+        this.currentTheme = localStorage.getItem('vllm-theme') || 'dark';
         
         this.init();
     }
@@ -106,6 +114,10 @@ class VLLMWebUI {
             sendBtn: document.getElementById('send-btn'),
             clearChatBtn: document.getElementById('clear-chat-btn'),
             clearLogsBtn: document.getElementById('clear-logs-btn'),
+            saveLogsBtn: document.getElementById('save-logs-btn'),
+            logsRowToggle: document.getElementById('logs-row-toggle'),
+            logsRow: document.getElementById('logs-row'),
+            logsRowContent: document.getElementById('logs-row-content'),
             
             // Chat
             chatContainer: document.getElementById('chat-container'),
@@ -152,11 +164,50 @@ class VLLMWebUI {
             benchmarkProgress: document.getElementById('benchmark-progress'),
             progressFill: document.getElementById('progress-fill'),
             progressStatus: document.getElementById('progress-status'),
-            progressPercent: document.getElementById('progress-percent')
+            progressPercent: document.getElementById('progress-percent'),
+            
+            // System Settings elements
+            systemSettingsToggle: document.getElementById('system-settings-toggle'),
+            systemSettingsContent: document.getElementById('system-settings-content'),
+            
+            // Tool Calling elements
+            toolCallingToggle: document.getElementById('tool-calling-toggle'),
+            toolCallingContent: document.getElementById('tool-calling-content'),
+            
+            // MCP elements
+            mcpToggle: document.getElementById('mcp-toggle'),
+            mcpContent: document.getElementById('mcp-content'),
+            
+            // Theme toggle
+            themeToggle: document.getElementById('theme-toggle'),
+            toolsCountBadge: document.getElementById('tools-count-badge'),
+            toolChoice: document.getElementById('tool-choice'),
+            parallelToolCalls: document.getElementById('parallel-tool-calls'),
+            toolsList: document.getElementById('tools-list'),
+            addToolBtn: document.getElementById('add-tool-btn'),
+            clearToolsBtn: document.getElementById('clear-tools-btn'),
+            toolEditorModal: document.getElementById('tool-editor-modal'),
+            toolEditorTitle: document.getElementById('tool-editor-title'),
+            toolEditorClose: document.getElementById('tool-editor-close'),
+            toolName: document.getElementById('tool-name'),
+            toolDescription: document.getElementById('tool-description'),
+            toolEditorCancel: document.getElementById('tool-editor-cancel'),
+            toolEditorSave: document.getElementById('tool-editor-save'),
+            // Form-based parameter editor
+            addParamBtn: document.getElementById('add-param-btn'),
+            paramsList: document.getElementById('params-list'),
+            paramCount: document.getElementById('param-count'),
+            paramTemplate: document.getElementById('param-template')
         };
 
         // Attach event listeners
         this.attachListeners();
+        
+        // Initialize view switching
+        this.initViewSwitching();
+        
+        // Initialize theme
+        this.initTheme();
         
         // Initialize resize functionality
         this.initResize();
@@ -187,12 +238,320 @@ class VLLMWebUI {
         
         // Start status polling
         this.pollStatus();
-        setInterval(() => this.pollStatus(), 3000);
+        setInterval(() => this.pollStatus(), 1000);
         
         // Add GPU status refresh button listener
         document.getElementById('gpu-status-refresh').addEventListener('click', () => {
             this.fetchGpuStatus();
         });
+        
+        // Tool Calling event listeners
+        this.initToolCalling();
+    }
+    
+    // ============ View Switching ============
+    initViewSwitching() {
+        this.currentView = 'vllm-server';
+        this.navCollapsed = false;
+        
+        // Get nav items
+        const navItems = document.querySelectorAll('.nav-item');
+        navItems.forEach(item => {
+            item.addEventListener('click', () => {
+                const viewId = item.dataset.view;
+                this.switchView(viewId);
+            });
+        });
+        
+        // Collapse button
+        const collapseBtn = document.getElementById('nav-collapse-btn');
+        if (collapseBtn) {
+            collapseBtn.addEventListener('click', () => this.toggleNavSidebar());
+        }
+        
+        // Resize handle for sidebar
+        const resizeHandle = document.getElementById('nav-resize-handle');
+        if (resizeHandle) {
+            resizeHandle.addEventListener('mousedown', (e) => this.startNavResize(e));
+            document.addEventListener('mousemove', (e) => this.navResize(e));
+            document.addEventListener('mouseup', () => this.stopNavResize());
+        }
+    }
+    
+    toggleNavSidebar() {
+        const sidebar = document.getElementById('nav-sidebar');
+        const resizeHandle = document.getElementById('nav-resize-handle');
+        const appContainer = document.querySelector('.app-container');
+        
+        this.navCollapsed = !this.navCollapsed;
+        
+        if (this.navCollapsed) {
+            sidebar.classList.add('collapsed');
+            sidebar.style.width = '60px';
+            if (resizeHandle) resizeHandle.style.left = '60px';
+            if (appContainer) appContainer.style.marginLeft = '60px';
+        } else {
+            sidebar.classList.remove('collapsed');
+            sidebar.style.width = '220px';
+            if (resizeHandle) resizeHandle.style.left = '220px';
+            if (appContainer) appContainer.style.marginLeft = '220px';
+        }
+    }
+    
+    startNavResize(e) {
+        e.preventDefault();
+        this.isNavResizing = true;
+        this.navResizeStartX = e.clientX;
+        
+        const sidebar = document.getElementById('nav-sidebar');
+        this.navResizeStartWidth = sidebar.offsetWidth;
+        
+        const resizeHandle = document.getElementById('nav-resize-handle');
+        if (resizeHandle) resizeHandle.classList.add('active');
+        
+        document.body.style.cursor = 'ew-resize';
+        document.body.style.userSelect = 'none';
+    }
+    
+    navResize(e) {
+        if (!this.isNavResizing) return;
+        
+        const deltaX = e.clientX - this.navResizeStartX;
+        let newWidth = this.navResizeStartWidth + deltaX;
+        
+        // Clamp width between 60 and 300
+        newWidth = Math.max(60, Math.min(300, newWidth));
+        
+        const sidebar = document.getElementById('nav-sidebar');
+        const resizeHandle = document.getElementById('nav-resize-handle');
+        const appContainer = document.querySelector('.app-container');
+        
+        // Auto-collapse if width is small enough
+        if (newWidth <= 80) {
+            sidebar.classList.add('collapsed');
+            this.navCollapsed = true;
+        } else {
+            sidebar.classList.remove('collapsed');
+            this.navCollapsed = false;
+        }
+        
+        sidebar.style.width = `${newWidth}px`;
+        if (resizeHandle) resizeHandle.style.left = `${newWidth}px`;
+        if (appContainer) appContainer.style.marginLeft = `${newWidth}px`;
+    }
+    
+    stopNavResize() {
+        if (!this.isNavResizing) return;
+        
+        this.isNavResizing = false;
+        
+        const resizeHandle = document.getElementById('nav-resize-handle');
+        if (resizeHandle) resizeHandle.classList.remove('active');
+        
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+    }
+    
+    switchView(viewId) {
+        // Update nav items
+        document.querySelectorAll('.nav-item').forEach(item => {
+            item.classList.toggle('active', item.dataset.view === viewId);
+        });
+        
+        // Update view content
+        document.querySelectorAll('.view-content').forEach(view => {
+            view.classList.remove('active');
+            view.style.display = 'none';
+        });
+        
+        const targetView = document.getElementById(`${viewId}-view`);
+        if (targetView) {
+            targetView.classList.add('active');
+            targetView.style.display = 'block';
+        }
+        
+        // Update header title
+        const viewTitle = document.getElementById('view-title');
+        if (viewTitle) {
+            switch (viewId) {
+                case 'vllm-server':
+                    viewTitle.innerHTML = '<img src="/assets/vllm_only.png" alt="vLLM" class="view-title-logo"> vLLM Server';
+                    break;
+                case 'guidellm':
+                    viewTitle.innerHTML = '📊 GuideLLM Benchmark';
+                    // Update benchmark server status
+                    this.updateBenchmarkServerStatus();
+                    break;
+                default:
+                    viewTitle.textContent = viewId;
+            }
+        }
+        
+        this.currentView = viewId;
+    }
+    
+    // ============ Theme Toggle ============
+    initTheme() {
+        // Apply saved theme on load
+        this.applyTheme(this.currentTheme);
+        
+        // Theme toggle button listener
+        if (this.elements.themeToggle) {
+            this.elements.themeToggle.addEventListener('click', () => {
+                this.toggleTheme();
+            });
+        }
+    }
+    
+    applyTheme(theme) {
+        const icon = this.elements.themeToggle?.querySelector('.theme-icon');
+        const label = this.elements.themeToggle?.querySelector('.theme-label');
+        
+        if (theme === 'light') {
+            document.documentElement.setAttribute('data-theme', 'light');
+            if (icon) icon.textContent = '◑';
+            if (label) label.textContent = 'Light';
+            if (this.elements.themeToggle) {
+                this.elements.themeToggle.title = 'Switch to dark mode';
+            }
+        } else {
+            document.documentElement.removeAttribute('data-theme');
+            if (icon) icon.textContent = '◐';
+            if (label) label.textContent = 'Dark';
+            if (this.elements.themeToggle) {
+                this.elements.themeToggle.title = 'Switch to light mode';
+            }
+        }
+        this.currentTheme = theme;
+    }
+    
+    toggleTheme() {
+        const newTheme = this.currentTheme === 'dark' ? 'light' : 'dark';
+        this.applyTheme(newTheme);
+        localStorage.setItem('vllm-theme', newTheme);
+        this.showNotification(`Switched to ${newTheme} mode`, 'info');
+    }
+    
+    updateBenchmarkServerStatus() {
+        const statusBanner = document.getElementById('benchmark-server-status');
+        if (!statusBanner) return;
+        
+        if (this.serverRunning && this.serverReady) {
+            statusBanner.classList.add('connected');
+            statusBanner.innerHTML = `
+                <div class="server-status-content">
+                    <span class="status-icon">✅</span>
+                    <span class="status-message">vLLM server is running and ready for benchmarks</span>
+                </div>
+            `;
+        } else if (this.serverRunning) {
+            statusBanner.classList.remove('connected');
+            statusBanner.innerHTML = `
+                <div class="server-status-content">
+                    <span class="status-icon">⏳</span>
+                    <span class="status-message">vLLM server is starting up...</span>
+                </div>
+            `;
+        } else {
+            statusBanner.classList.remove('connected');
+            statusBanner.innerHTML = `
+                <div class="server-status-content">
+                    <span class="status-icon">⚠️</span>
+                    <span class="status-message">Start the vLLM server first to run benchmarks</span>
+                    <button class="btn btn-primary btn-sm" onclick="window.vllmUI.switchView('vllm-server')">Go to Server →</button>
+                </div>
+            `;
+        }
+    }
+
+    initToolCalling() {
+        // Toggle System Settings section
+        if (this.elements.systemSettingsToggle) {
+            this.elements.systemSettingsToggle.addEventListener('click', () => {
+                const content = this.elements.systemSettingsContent;
+                const icon = this.elements.systemSettingsToggle.querySelector('.toggle-icon');
+                if (content.style.display === 'none') {
+                    content.style.display = 'block';
+                    icon.textContent = '▲';
+                } else {
+                    content.style.display = 'none';
+                    icon.textContent = '▼';
+                }
+            });
+        }
+        
+        // Toggle tool calling section
+        if (this.elements.toolCallingToggle) {
+            this.elements.toolCallingToggle.addEventListener('click', () => {
+                const content = this.elements.toolCallingContent;
+                const icon = this.elements.toolCallingToggle.querySelector('.toggle-icon');
+                if (content.style.display === 'none') {
+                    content.style.display = 'block';
+                    icon.textContent = '▲';
+                } else {
+                    content.style.display = 'none';
+                    icon.textContent = '▼';
+                }
+            });
+        }
+        
+        // Toggle MCP section
+        if (this.elements.mcpToggle) {
+            this.elements.mcpToggle.addEventListener('click', () => {
+                const content = this.elements.mcpContent;
+                const icon = this.elements.mcpToggle.querySelector('.toggle-icon');
+                if (content.style.display === 'none') {
+                    content.style.display = 'block';
+                    icon.textContent = '▲';
+                } else {
+                    content.style.display = 'none';
+                    icon.textContent = '▼';
+                }
+            });
+        }
+        
+        // Add tool button
+        if (this.elements.addToolBtn) {
+            this.elements.addToolBtn.addEventListener('click', () => this.openToolEditor());
+        }
+        
+        // Clear all tools
+        if (this.elements.clearToolsBtn) {
+            this.elements.clearToolsBtn.addEventListener('click', () => this.clearAllTools());
+        }
+        
+        // Tool editor modal
+        if (this.elements.toolEditorClose) {
+            this.elements.toolEditorClose.addEventListener('click', () => this.closeToolEditor());
+        }
+        if (this.elements.toolEditorCancel) {
+            this.elements.toolEditorCancel.addEventListener('click', () => this.closeToolEditor());
+        }
+        if (this.elements.toolEditorSave) {
+            this.elements.toolEditorSave.addEventListener('click', () => this.saveTool());
+        }
+        
+        // Add parameter button
+        if (this.elements.addParamBtn) {
+            this.elements.addParamBtn.addEventListener('click', () => this.addParameter());
+        }
+        
+        // Tool preset buttons
+        document.querySelectorAll('.tool-preset-btn').forEach(btn => {
+            btn.addEventListener('click', () => this.loadToolPreset(btn.dataset.preset));
+        });
+        
+        // Close modal on backdrop click
+        if (this.elements.toolEditorModal) {
+            this.elements.toolEditorModal.addEventListener('click', (e) => {
+                if (e.target === this.elements.toolEditorModal) {
+                    this.closeToolEditor();
+                }
+            });
+        }
+        
+        // Initialize current parameters array for form
+        this.currentParams = [];
     }
 
     attachListeners() {
@@ -279,12 +638,58 @@ class VLLMWebUI {
             this.autoScroll = e.target.checked;
         });
         
-        // Generation parameters
+        // Save logs button
+        if (this.elements.saveLogsBtn) {
+            this.elements.saveLogsBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.saveLogs();
+            });
+        }
+        
+        // Logs row toggle (collapsible)
+        if (this.elements.logsRowToggle) {
+            this.elements.logsRowToggle.addEventListener('click', (e) => {
+                // Don't toggle if clicking on controls
+                if (e.target.closest('.logs-row-controls')) return;
+                this.toggleLogsRow();
+            });
+        }
+        
+        // Generation parameters - bidirectional sync between slider and input
         this.elements.temperature.addEventListener('input', (e) => {
-            this.elements.tempValue.textContent = e.target.value;
+            this.elements.tempValue.value = e.target.value;
         });
+        this.elements.tempValue.addEventListener('input', (e) => {
+            let val = parseFloat(e.target.value);
+            if (isNaN(val)) val = 0.7;
+            val = Math.max(0, Math.min(1, val)); // Clamp between 0 and 1
+            this.elements.temperature.value = val;
+        });
+        this.elements.tempValue.addEventListener('blur', (e) => {
+            // On blur, ensure the value is properly formatted
+            let val = parseFloat(e.target.value);
+            if (isNaN(val)) val = 0.7;
+            val = Math.max(0, Math.min(1, val));
+            e.target.value = val;
+            this.elements.temperature.value = val;
+        });
+        
         this.elements.maxTokens.addEventListener('input', (e) => {
-            this.elements.tokensValue.textContent = e.target.value;
+            this.elements.tokensValue.value = e.target.value;
+        });
+        this.elements.tokensValue.addEventListener('input', (e) => {
+            let val = parseInt(e.target.value);
+            if (isNaN(val)) val = 256;
+            val = Math.max(1, Math.min(4096, val)); // Clamp between 1 and 4096
+            this.elements.maxTokens.value = val;
+        });
+        this.elements.tokensValue.addEventListener('blur', (e) => {
+            // On blur, ensure the value is properly formatted
+            let val = parseInt(e.target.value);
+            if (isNaN(val)) val = 256;
+            val = Math.max(1, Math.min(4096, val));
+            e.target.value = val;
+            this.elements.maxTokens.value = val;
         });
         
         // Command preview - update when any config changes
@@ -489,6 +894,7 @@ class VLLMWebUI {
             } else {
                 this.serverRunning = false;
                 this.serverReady = false;  // Reset ready state when server stops
+                this.healthCheckStarted = false;  // Reset health check flag
                 this.currentConfig = null;  // Clear config when server stops
                 this.updateStatus('connected', 'Server Stopped');
                 this.elements.startBtn.disabled = false;
@@ -506,6 +912,25 @@ class VLLMWebUI {
     updateStatus(state, text) {
         this.elements.statusDot.className = `status-dot ${state}`;
         this.elements.statusText.textContent = text;
+        
+        // Also update nav sidebar status
+        const navStatusDot = document.getElementById('nav-status-dot');
+        const navStatusText = document.getElementById('nav-status-text');
+        if (navStatusDot) navStatusDot.className = `status-dot ${state}`;
+        if (navStatusText) {
+            if (state === 'running') {
+                navStatusText.textContent = 'Running';
+            } else if (state === 'connected') {
+                navStatusText.textContent = 'Stopped';
+            } else {
+                navStatusText.textContent = 'Offline';
+            }
+        }
+        
+        // Update benchmark server status if on that view
+        if (this.currentView === 'guidellm') {
+            this.updateBenchmarkServerStatus();
+        }
     }
 
     // GPU Status Polling
@@ -1162,19 +1587,36 @@ class VLLMWebUI {
             // Stop tokens are only for reference/documentation in the UI
             // Users can still set custom_stop_tokens in the server config if needed
             
+            // Get tools configuration
+            const toolsConfig = this.getToolsForRequest();
+            
+            // Build request body
+            const requestBody = {
+                messages: messagesToSend,  // Send messages with system prompt prepended
+                temperature: parseFloat(this.elements.temperature.value),
+                max_tokens: parseInt(this.elements.maxTokens.value),
+                stream: true
+                // No stop_tokens - let vLLM handle them automatically
+            };
+            
+            // Add tools if configured
+            if (toolsConfig.tools) {
+                requestBody.tools = toolsConfig.tools;
+                if (toolsConfig.tool_choice) {
+                    requestBody.tool_choice = toolsConfig.tool_choice;
+                }
+                if (toolsConfig.parallel_tool_calls !== null) {
+                    requestBody.parallel_tool_calls = toolsConfig.parallel_tool_calls;
+                }
+            }
+            
             // Use streaming
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    messages: messagesToSend,  // Send messages with system prompt prepended
-                    temperature: parseFloat(this.elements.temperature.value),
-                    max_tokens: parseInt(this.elements.maxTokens.value),
-                    stream: true
-                    // No stop_tokens - let vLLM handle them automatically
-                })
+                body: JSON.stringify(requestBody)
             });
             
             if (!response.ok) {
@@ -1216,6 +1658,34 @@ class VLLMWebUI {
                                 // Handle OpenAI-compatible chat completions endpoint format
                                 const choice = parsed.choices[0];
                                 let content = null;
+                                
+                                // Check for tool calls in delta (streaming)
+                                if (choice.delta && choice.delta.tool_calls) {
+                                    // Store tool calls for later processing
+                                    if (!this.pendingToolCalls) {
+                                        this.pendingToolCalls = [];
+                                    }
+                                    for (const tc of choice.delta.tool_calls) {
+                                        const idx = tc.index || 0;
+                                        if (!this.pendingToolCalls[idx]) {
+                                            this.pendingToolCalls[idx] = {
+                                                id: tc.id || '',
+                                                type: 'function',
+                                                function: { name: '', arguments: '' }
+                                            };
+                                        }
+                                        if (tc.id) this.pendingToolCalls[idx].id = tc.id;
+                                        if (tc.function?.name) this.pendingToolCalls[idx].function.name += tc.function.name;
+                                        if (tc.function?.arguments) this.pendingToolCalls[idx].function.arguments += tc.function.arguments;
+                                    }
+                                    // Show tool calling indicator
+                                    textSpan.innerHTML = '🔧 <em>Calling tool...</em>';
+                                }
+                                // Check for tool calls in message (non-streaming)
+                                else if (choice.message && choice.message.tool_calls) {
+                                    this.pendingToolCalls = choice.message.tool_calls;
+                                    textSpan.innerHTML = '🔧 <em>Tool call requested</em>';
+                                }
                                 
                                 // Chat completions endpoint format (standard OpenAI format)
                                 if (choice.delta && choice.delta.content) {
@@ -1270,7 +1740,25 @@ class VLLMWebUI {
             console.log('Usage data:', usageData);
             
             // Remove cursor and finalize
-            if (fullText) {
+            // Check if we have tool calls
+            if (this.pendingToolCalls && this.pendingToolCalls.length > 0) {
+                // Display tool calls
+                const toolCallsHtml = this.formatToolCallMessage(this.pendingToolCalls);
+                textSpan.innerHTML = toolCallsHtml;
+                assistantMessageDiv.classList.add('tool-call');
+                
+                // Add to chat history with tool_calls
+                this.chatHistory.push({
+                    role: 'assistant',
+                    content: null,
+                    tool_calls: this.pendingToolCalls
+                });
+                
+                // Clear pending tool calls
+                this.pendingToolCalls = null;
+                
+                console.log('Tool calls displayed:', this.chatHistory[this.chatHistory.length - 1].tool_calls);
+            } else if (fullText) {
                 // Clean up response:
                 // 1. Remove literal escape sequences (\r\n, \n, \r as text)
                 fullText = fullText.replace(/\\r\\n/g, '\n');  // Replace literal \r\n with actual newline
@@ -1417,14 +1905,16 @@ class VLLMWebUI {
         const messageDiv = document.createElement('div');
         messageDiv.className = `chat-message ${role}`;
         
+        // Add avatar for user and assistant messages
+        if (role !== 'system') {
+            const avatarDiv = document.createElement('div');
+            avatarDiv.className = 'message-avatar';
+            avatarDiv.textContent = role === 'user' ? 'U' : 'AI';
+            messageDiv.appendChild(avatarDiv);
+        }
+        
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
-        
-        if (role !== 'system') {
-            const roleLabel = document.createElement('strong');
-            roleLabel.textContent = role.charAt(0).toUpperCase() + role.slice(1) + ': ';
-            contentDiv.appendChild(roleLabel);
-        }
         
         const textSpan = document.createElement('span');
         textSpan.className = 'message-text';
@@ -1445,7 +1935,7 @@ class VLLMWebUI {
         this.elements.chatContainer.innerHTML = `
             <div class="chat-message system">
                 <div class="message-content">
-                    <strong>System:</strong> Chat cleared. Start a new conversation.
+                    <span class="message-text">Chat cleared. Start a new conversation.</span>
                 </div>
             </div>
         `;
@@ -1457,16 +1947,16 @@ class VLLMWebUI {
     }
 
     addLog(message, type = 'info') {
-        // Check if server startup is complete (match various formats)
-        if (message && (message.includes('Application startup complete') || 
-                       message.includes('Uvicorn running') ||
-                       message.match(/Application startup complete/i))) {
-            console.log('🎉 Server startup detected! Setting serverReady = true');
-            this.serverReady = true;
-            this.updateSendButtonState();
-            
-            // Fetch and display the chat template being used by the model
-            this.fetchChatTemplate();
+        // Check if server startup is complete - look for vLLM-specific ready indicators
+        // "Uvicorn running" or "Application startup complete" appear BEFORE model is loaded
+        // So we start health check polling when we see these, then confirm with /health endpoint
+        if (message && !this.healthCheckStarted && 
+            (message.includes('Application startup complete') || 
+             message.includes('Uvicorn running') ||
+             message.match(/Application startup complete/i))) {
+            console.log('🔄 Uvicorn started, beginning health check polling...');
+            this.healthCheckStarted = true;
+            this.startHealthCheckPolling();
         }
         
         // Auto-detect log type if not specified
@@ -1519,39 +2009,145 @@ class VLLMWebUI {
         }
     }
 
+    async startHealthCheckPolling() {
+        // Poll the vLLM health endpoint to confirm server is truly ready
+        const maxAttempts = 60; // 60 attempts * 2 seconds = 2 minutes max
+        let attempts = 0;
+        
+        const checkHealth = async () => {
+            if (!this.serverRunning || this.serverReady) {
+                this.healthCheckStarted = false;
+                return;
+            }
+            
+            attempts++;
+            
+            try {
+                const response = await fetch('/api/vllm/health');
+                const data = await response.json();
+                
+                if (data.success && data.status_code === 200) {
+                    console.log('🎉 vLLM health check passed! Server is ready.');
+                    this.serverReady = true;
+                    this.healthCheckStarted = false;
+                    this.updateSendButtonState();
+                    this.fetchChatTemplate();
+                    return;
+                }
+            } catch (error) {
+                // Health check failed, continue polling
+                console.log(`Health check attempt ${attempts}/${maxAttempts} - waiting...`);
+            }
+            
+            if (attempts < maxAttempts && this.serverRunning && !this.serverReady) {
+                setTimeout(checkHealth, 2000); // Check every 2 seconds
+            } else {
+                this.healthCheckStarted = false;
+                if (!this.serverReady) {
+                    console.log('⚠️ Health check timed out, server may still be loading...');
+                }
+            }
+        };
+        
+        // Start checking after a brief delay
+        setTimeout(checkHealth, 1000);
+    }
+
     clearLogs() {
         this.elements.logsContainer.innerHTML = `
             <div class="log-entry info">Logs cleared.</div>
         `;
     }
 
-    showNotification(message, type = 'info') {
-        // Simple notification using browser notification API
-        // You could also implement a custom toast notification
+    saveLogs() {
+        const logsContainer = this.elements.logsContainer;
+        if (!logsContainer) return;
+        
+        // Get all log entries as text
+        const logEntries = logsContainer.querySelectorAll('.log-entry');
+        let logText = '';
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        
+        logEntries.forEach(entry => {
+            const text = entry.textContent || entry.innerText;
+            logText += text + '\n';
+        });
+        
+        if (!logText.trim()) {
+            this.showNotification('No logs to save', 'warning');
+            return;
+        }
+        
+        // Create and download file
+        const blob = new Blob([logText], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `vllm-server-logs-${timestamp}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        this.showNotification('Logs saved successfully', 'success');
+    }
+
+    toggleLogsRow() {
+        const logsRow = this.elements.logsRow;
+        if (!logsRow) return;
+        
+        logsRow.classList.toggle('collapsed');
+    }
+
+    showNotification(message, type = 'info', duration = 4000) {
+        // Create toast container if it doesn't exist
+        let container = document.getElementById('toast-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'toast-container';
+            document.body.appendChild(container);
+        }
+        
+        // Get icon based on type
+        const icons = {
+            success: '✓',
+            error: '✕',
+            warning: '⚠',
+            info: 'ℹ'
+        };
+        
+        // Create toast element
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${type}`;
+        toast.innerHTML = `
+            <div class="toast-icon">${icons[type] || icons.info}</div>
+            <div class="toast-content">
+                <div class="toast-message">${message}</div>
+            </div>
+            <button class="toast-close" onclick="this.parentElement.classList.add('toast-exit'); setTimeout(() => this.parentElement.remove(), 300);">✕</button>
+            <div class="toast-progress">
+                <div class="toast-progress-bar" style="animation-duration: ${duration}ms;"></div>
+            </div>
+        `;
+        
+        container.appendChild(toast);
+        
+        // Log to console
         console.log(`[${type.toUpperCase()}] ${message}`);
         
-        // Optional: Add a temporary notification element
-        const notification = document.createElement('div');
-        notification.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 15px 20px;
-            background: ${type === 'success' ? '#10b981' : type === 'error' ? '#ef4444' : '#f59e0b'};
-            color: white;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-            z-index: 1000;
-            animation: slideIn 0.3s ease-out;
-        `;
-        notification.textContent = message;
-        
-        document.body.appendChild(notification);
-        
+        // Auto-remove after duration
         setTimeout(() => {
-            notification.style.animation = 'slideOut 0.3s ease-out';
-            setTimeout(() => notification.remove(), 300);
-        }, 3000);
+            if (toast.parentElement) {
+                toast.classList.add('toast-exit');
+                setTimeout(() => {
+                    if (toast.parentElement) {
+                        toast.remove();
+                    }
+                }, 300);
+            }
+        }, duration);
+        
+        return toast;
     }
 
     updateChatMetrics(metrics) {
@@ -2561,8 +3157,22 @@ class VLLMWebUI {
             // Vertical resize (horizontal handles for row resizing)
             // Determine which panel to resize based on the handle ID
             if (handle.id === 'metrics-resize-handle') {
-                // Handle between chat and metrics sections
+                // Handle between main content and performance metrics sections
                 this.resizingPanel = document.getElementById('metrics-panel');
+                this.startHeight = this.resizingPanel.offsetHeight;
+                
+                // Also store the main content height for inverse resizing
+                const mainContent = document.querySelector('.main-content');
+                this.mainContentStartHeight = mainContent.offsetHeight;
+            } else if (handle.id === 'chat-metrics-resize-handle') {
+                // Handle between chat panel and chat metrics (Last Response Metrics)
+                this.resizingPanel = document.getElementById('chat-metrics-panel');
+                this.resizeMode = 'chat-metrics';
+                this.startHeight = this.resizingPanel.offsetHeight;
+                
+                // Also store the chat panel reference for inverse resizing
+                this.chatPanel = handle.closest('.chat-section').querySelector('.panel');
+                this.chatPanelStartHeight = this.chatPanel.offsetHeight;
             }
         }
     }
@@ -2601,20 +3211,49 @@ class VLLMWebUI {
         } else {
             // Vertical resize (horizontal handles for row resizing)
             const deltaY = e.clientY - this.startY;
-            const newHeight = this.startHeight + deltaY; // Dragging down makes panel bigger
             
-            // Apply minimum height
-            if (newHeight >= 200) {
-                // Set height on both the outer section and inner panel
-                this.resizingPanel.style.height = `${newHeight}px`;
+            if (this.resizeMode === 'chat-metrics') {
+                // Special handling for chat-metrics resize
+                // Dragging up makes metrics bigger (opposite direction)
+                const newMetricsHeight = this.startHeight - deltaY;
+                const newChatHeight = this.chatPanelStartHeight + deltaY;
                 
-                const innerPanel = this.resizingPanel.querySelector('.panel');
-                if (innerPanel) {
-                    innerPanel.style.height = `${newHeight}px`;
+                // Apply minimum heights
+                if (newMetricsHeight >= 100 && newChatHeight >= 300) {
+                    this.resizingPanel.style.height = `${newMetricsHeight}px`;
+                    this.chatPanel.style.maxHeight = `${newChatHeight}px`;
+                    this.chatPanel.style.minHeight = `${newChatHeight}px`;
+                    
+                    // Force layout recalculation
+                    this.resizingPanel.offsetHeight;
                 }
+            } else {
+                const newHeight = this.startHeight + deltaY; // Dragging down makes panel bigger
                 
-                // Force layout recalculation
-                this.resizingPanel.offsetHeight;
+                // Apply minimum height
+                if (newHeight >= 200) {
+                    // Set height on both the outer section and inner panel
+                    this.resizingPanel.style.height = `${newHeight}px`;
+                    
+                    const innerPanel = this.resizingPanel.querySelector('.panel');
+                    if (innerPanel) {
+                        innerPanel.style.height = `${newHeight}px`;
+                    }
+                    
+                    // Also adjust the main-content height inversely
+                    // When metrics gets bigger, main content should shrink
+                    if (this.mainContentStartHeight) {
+                        const mainContent = document.querySelector('.main-content');
+                        const newMainHeight = this.mainContentStartHeight - deltaY;
+                        if (newMainHeight >= 500) {
+                            mainContent.style.height = `${newMainHeight}px`;
+                            mainContent.style.maxHeight = `${newMainHeight}px`;
+                        }
+                    }
+                    
+                    // Force layout recalculation
+                    this.resizingPanel.offsetHeight;
+                }
             }
         }
     }
@@ -3579,6 +4218,458 @@ class VLLMWebUI {
             console.error('Error deleting recipe:', error);
             this.showNotification('Failed to delete recipe', 'error');
         }
+    }
+    
+    // ==========================================
+    // Tool Calling / Function Calling Methods
+    // ==========================================
+    
+    openToolEditor(toolIndex = -1) {
+        this.editingToolIndex = toolIndex;
+        
+        if (toolIndex >= 0 && toolIndex < this.tools.length) {
+            // Editing existing tool
+            const tool = this.tools[toolIndex];
+            this.elements.toolEditorTitle.textContent = 'Edit Tool';
+            this.elements.toolName.value = tool.function.name;
+            this.elements.toolDescription.value = tool.function.description || '';
+            
+            // Convert JSON Schema parameters to form-based params
+            this.currentParams = this.jsonSchemaToParams(tool.function.parameters);
+        } else {
+            // New tool
+            this.elements.toolEditorTitle.textContent = 'Add New Tool';
+            this.elements.toolName.value = '';
+            this.elements.toolDescription.value = '';
+            this.currentParams = [];
+        }
+        
+        this.renderParamsList();
+        this.elements.toolEditorModal.style.display = 'flex';
+    }
+    
+    // Convert JSON Schema to form-based parameters array
+    jsonSchemaToParams(schema) {
+        if (!schema || !schema.properties) return [];
+        
+        const params = [];
+        const required = schema.required || [];
+        
+        for (const [name, prop] of Object.entries(schema.properties)) {
+            params.push({
+                name: name,
+                type: prop.type || 'string',
+                description: prop.description || '',
+                required: required.includes(name),
+                enum: prop.enum ? prop.enum.join(', ') : ''
+            });
+        }
+        
+        return params;
+    }
+    
+    // Convert form-based parameters array to JSON Schema
+    paramsToJsonSchema() {
+        if (this.currentParams.length === 0) {
+            return { type: 'object', properties: {} };
+        }
+        
+        const properties = {};
+        const required = [];
+        
+        for (const param of this.currentParams) {
+            if (!param.name) continue;
+            
+            const prop = { type: param.type };
+            if (param.description) prop.description = param.description;
+            if (param.enum) {
+                prop.enum = param.enum.split(',').map(s => s.trim()).filter(s => s);
+            }
+            
+            properties[param.name] = prop;
+            if (param.required) required.push(param.name);
+        }
+        
+        const schema = { type: 'object', properties };
+        if (required.length > 0) schema.required = required;
+        
+        return schema;
+    }
+    
+    addParameter() {
+        this.currentParams.push({
+            name: '',
+            type: 'string',
+            description: '',
+            required: false,
+            enum: ''
+        });
+        this.renderParamsList();
+        
+        // Focus the new parameter's name input
+        setTimeout(() => {
+            const items = this.elements.paramsList.querySelectorAll('.param-item');
+            const lastItem = items[items.length - 1];
+            if (lastItem) {
+                const nameInput = lastItem.querySelector('.param-name');
+                if (nameInput) nameInput.focus();
+            }
+        }, 50);
+    }
+    
+    removeParameter(index) {
+        this.currentParams.splice(index, 1);
+        this.renderParamsList();
+    }
+    
+    renderParamsList() {
+        const container = this.elements.paramsList;
+        if (!container) return;
+        
+        // Update count
+        if (this.elements.paramCount) {
+            this.elements.paramCount.textContent = `(${this.currentParams.length})`;
+        }
+        
+        if (this.currentParams.length === 0) {
+            container.innerHTML = `
+                <div class="params-empty">
+                    No parameters defined. Click "Add Parameter" to add one.
+                </div>
+            `;
+            return;
+        }
+        
+        container.innerHTML = this.currentParams.map((param, index) => `
+            <div class="param-item" data-param-index="${index}">
+                <div class="param-item-header">
+                    <div class="param-required-toggle">
+                        <input type="checkbox" class="param-required" ${param.required ? 'checked' : ''} title="Required parameter">
+                        <span class="required-label">Required</span>
+                    </div>
+                    <button type="button" class="param-delete-btn" title="Remove parameter">✕</button>
+                </div>
+                <div class="param-row">
+                    <div class="param-field param-name-field">
+                        <label>Name</label>
+                        <input type="text" class="form-control param-name" placeholder="param_name" value="${this.escapeHtml(param.name)}" spellcheck="false">
+                    </div>
+                    <div class="param-field param-type-field">
+                        <label>Type</label>
+                        <select class="form-control param-type">
+                            <option value="string" ${param.type === 'string' ? 'selected' : ''}>String</option>
+                            <option value="number" ${param.type === 'number' ? 'selected' : ''}>Number</option>
+                            <option value="integer" ${param.type === 'integer' ? 'selected' : ''}>Integer</option>
+                            <option value="boolean" ${param.type === 'boolean' ? 'selected' : ''}>Boolean</option>
+                            <option value="array" ${param.type === 'array' ? 'selected' : ''}>Array</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="param-field">
+                    <label>Description</label>
+                    <input type="text" class="form-control param-description" placeholder="What is this parameter for?" value="${this.escapeHtml(param.description)}">
+                </div>
+                <div class="param-field param-enum-field" style="${param.type === 'string' ? '' : 'display: none;'}">
+                    <label>Allowed Values <span class="optional">(comma-separated)</span></label>
+                    <input type="text" class="form-control param-enum" placeholder="e.g., celsius, fahrenheit" value="${this.escapeHtml(param.enum || '')}">
+                </div>
+            </div>
+        `).join('');
+        
+        // Attach event listeners to parameter items
+        this.attachParamListeners();
+    }
+    
+    escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/&/g, '&amp;')
+                  .replace(/</g, '&lt;')
+                  .replace(/>/g, '&gt;')
+                  .replace(/"/g, '&quot;')
+                  .replace(/'/g, '&#039;');
+    }
+    
+    attachParamListeners() {
+        const container = this.elements.paramsList;
+        if (!container) return;
+        
+        container.querySelectorAll('.param-item').forEach((item, index) => {
+            // Delete button
+            const deleteBtn = item.querySelector('.param-delete-btn');
+            if (deleteBtn) {
+                deleteBtn.addEventListener('click', () => this.removeParameter(index));
+            }
+            
+            // Required checkbox
+            const requiredCheckbox = item.querySelector('.param-required');
+            if (requiredCheckbox) {
+                requiredCheckbox.addEventListener('change', () => {
+                    this.currentParams[index].required = requiredCheckbox.checked;
+                });
+            }
+            
+            // Name input
+            const nameInput = item.querySelector('.param-name');
+            if (nameInput) {
+                nameInput.addEventListener('input', () => {
+                    this.currentParams[index].name = nameInput.value;
+                });
+            }
+            
+            // Type select
+            const typeSelect = item.querySelector('.param-type');
+            if (typeSelect) {
+                typeSelect.addEventListener('change', () => {
+                    this.currentParams[index].type = typeSelect.value;
+                    // Show/hide enum field based on type
+                    const enumField = item.querySelector('.param-enum-field');
+                    if (enumField) {
+                        enumField.style.display = typeSelect.value === 'string' ? '' : 'none';
+                    }
+                });
+            }
+            
+            // Description input
+            const descInput = item.querySelector('.param-description');
+            if (descInput) {
+                descInput.addEventListener('input', () => {
+                    this.currentParams[index].description = descInput.value;
+                });
+            }
+            
+            // Enum input
+            const enumInput = item.querySelector('.param-enum');
+            if (enumInput) {
+                enumInput.addEventListener('input', () => {
+                    this.currentParams[index].enum = enumInput.value;
+                });
+            }
+        });
+    }
+    
+    closeToolEditor() {
+        this.elements.toolEditorModal.style.display = 'none';
+        this.editingToolIndex = -1;
+    }
+    
+    saveTool() {
+        const name = this.elements.toolName.value.trim();
+        const description = this.elements.toolDescription.value.trim();
+        
+        // Validation
+        if (!name) {
+            this.showNotification('Function name is required', 'error');
+            return;
+        }
+        
+        // Validate function name format
+        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
+            this.showNotification('Invalid function name. Use only letters, numbers, and underscores.', 'error');
+            return;
+        }
+        
+        if (!description) {
+            this.showNotification('Description is required', 'error');
+            return;
+        }
+        
+        // Validate parameter names
+        for (const param of this.currentParams) {
+            if (param.name && !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(param.name)) {
+                this.showNotification(`Invalid parameter name "${param.name}". Use only letters, numbers, and underscores.`, 'error');
+                return;
+            }
+        }
+        
+        // Build parameters from form
+        const parameters = this.paramsToJsonSchema();
+        
+        const tool = {
+            type: 'function',
+            function: {
+                name: name,
+                description: description,
+                parameters: parameters
+            }
+        };
+        
+        if (this.editingToolIndex >= 0) {
+            // Update existing
+            this.tools[this.editingToolIndex] = tool;
+            this.showNotification(`Tool "${name}" updated`, 'success');
+        } else {
+            // Check for duplicate name
+            if (this.tools.some(t => t.function.name === name)) {
+                this.showNotification(`Tool "${name}" already exists`, 'error');
+                return;
+            }
+            // Add new
+            this.tools.push(tool);
+            this.showNotification(`Tool "${name}" added`, 'success');
+        }
+        
+        this.closeToolEditor();
+        this.renderToolsList();
+        this.updateToolsCountBadge();
+    }
+    
+    deleteTool(index) {
+        if (index >= 0 && index < this.tools.length) {
+            const name = this.tools[index].function.name;
+            this.tools.splice(index, 1);
+            this.renderToolsList();
+            this.updateToolsCountBadge();
+            this.showNotification(`Tool "${name}" removed`, 'info');
+        }
+    }
+    
+    clearAllTools() {
+        if (this.tools.length === 0) return;
+        
+        if (confirm('Remove all tools?')) {
+            this.tools = [];
+            this.renderToolsList();
+            this.updateToolsCountBadge();
+            this.showNotification('All tools cleared', 'info');
+        }
+    }
+    
+    renderToolsList() {
+        const container = this.elements.toolsList;
+        if (!container) return;
+        
+        if (this.tools.length === 0) {
+            container.innerHTML = `
+                <div class="tools-empty-state">
+                    <span>No tools defined. Click "Add Tool" or load a preset to get started.</span>
+                </div>
+            `;
+            return;
+        }
+        
+        container.innerHTML = this.tools.map((tool, index) => {
+            const func = tool.function;
+            const params = func.parameters?.properties || {};
+            const paramNames = Object.keys(params);
+            const requiredParams = func.parameters?.required || [];
+            
+            return `
+                <div class="tool-item" data-index="${index}">
+                    <div class="tool-item-info">
+                        <div class="tool-item-name">${this.escapeHtml(func.name)}</div>
+                        <div class="tool-item-description">${this.escapeHtml(func.description || 'No description')}</div>
+                        ${paramNames.length > 0 ? `
+                            <div class="tool-item-params">
+                                ${paramNames.map(p => `<span>${requiredParams.includes(p) ? '•' : '○'} ${this.escapeHtml(p)}</span>`).join('')}
+                            </div>
+                        ` : ''}
+                    </div>
+                    <div class="tool-item-actions">
+                        <button class="btn btn-secondary btn-xs tool-edit-btn" onclick="window.vllmUI.openToolEditor(${index})">Edit</button>
+                        <button class="btn btn-danger btn-xs tool-delete-btn" onclick="window.vllmUI.deleteTool(${index})">×</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+    
+    updateToolsCountBadge() {
+        const badge = this.elements.toolsCountBadge;
+        if (!badge) return;
+        
+        if (this.tools.length > 0) {
+            badge.textContent = `${this.tools.length} tool${this.tools.length > 1 ? 's' : ''}`;
+            badge.style.display = 'inline-block';
+        } else {
+            badge.style.display = 'none';
+        }
+    }
+    
+    async loadToolPreset(presetName) {
+        try {
+            const response = await fetch('/api/tools/presets');
+            const data = await response.json();
+            
+            if (data.presets && data.presets[presetName]) {
+                const preset = data.presets[presetName];
+                
+                // Add tools from preset (avoid duplicates)
+                let added = 0;
+                for (const tool of preset.tools) {
+                    const exists = this.tools.some(t => t.function.name === tool.function.name);
+                    if (!exists) {
+                        this.tools.push(tool);
+                        added++;
+                    }
+                }
+                
+                this.renderToolsList();
+                this.updateToolsCountBadge();
+                
+                if (added > 0) {
+                    this.showNotification(`Loaded ${preset.name}: ${added} tool${added > 1 ? 's' : ''} added`, 'success');
+                    
+                    // Auto-set tool choice to "auto" if not already set
+                    if (this.elements.toolChoice.value === '') {
+                        this.elements.toolChoice.value = 'auto';
+                    }
+                } else {
+                    this.showNotification(`${preset.name}: All tools already exist`, 'info');
+                }
+            }
+        } catch (error) {
+            console.error('Error loading preset:', error);
+            this.showNotification('Failed to load preset', 'error');
+        }
+    }
+    
+    getToolsForRequest() {
+        // Return tools array for API request, or null if empty/disabled
+        const toolChoice = this.elements.toolChoice?.value || '';
+        
+        if (toolChoice === '' || this.tools.length === 0) {
+            return { tools: null, tool_choice: null, parallel_tool_calls: null };
+        }
+        
+        return {
+            tools: this.tools,
+            tool_choice: toolChoice,
+            parallel_tool_calls: this.elements.parallelToolCalls?.checked || null
+        };
+    }
+    
+    formatToolCallMessage(toolCalls) {
+        // Format tool calls for display in chat
+        if (!toolCalls || toolCalls.length === 0) return '';
+        
+        return `
+            <div class="tool-calls-container">
+                ${toolCalls.map(tc => {
+                    const func = tc.function || {};
+                    let argsDisplay = func.arguments || '{}';
+                    try {
+                        argsDisplay = JSON.stringify(JSON.parse(func.arguments), null, 2);
+                    } catch (e) {}
+                    
+                    return `
+                        <div class="tool-call-content">
+                            <div class="tool-call-header">
+                                <span class="tool-icon">🔧</span>
+                                <span>${this.escapeHtml(func.name || 'unknown')}</span>
+                            </div>
+                            <div class="tool-call-args">${this.escapeHtml(argsDisplay)}</div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        `;
+    }
+    
+    escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 }
 // Add CSS animations for notifications
