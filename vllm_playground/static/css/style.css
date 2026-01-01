@@ -5351,7 +5351,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 .inline-panel-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 8px;
     padding: 10px 14px;
     background: var(--bg-tertiary);
     border-bottom: 1px solid var(--border-color);
@@ -5364,6 +5364,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     font-size: 0.85rem;
     font-weight: 600;
     color: var(--text-primary);
+    flex-shrink: 0;
 }
 
 .panel-icon {
@@ -5384,11 +5385,45 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     border-radius: 4px;
     transition: all 0.2s;
     line-height: 1;
+    margin-left: auto;
+    flex-shrink: 0;
 }
 
 .inline-panel-close:hover {
     background: var(--hover-overlay);
     color: var(--text-primary);
+}
+
+/* Panel documentation link */
+.panel-doc-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-decoration: none;
+    color: #22d3ee;
+    background: rgba(34, 211, 238, 0.15);
+    border-radius: 4px;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+}
+
+.panel-doc-link:hover {
+    background: rgba(34, 211, 238, 0.25);
+    color: #22d3ee;
+    text-decoration: none;
+}
+
+[data-theme="light"] .panel-doc-link {
+    color: #0891b2;
+    background: rgba(8, 145, 178, 0.12);
+}
+
+[data-theme="light"] .panel-doc-link:hover {
+    background: rgba(8, 145, 178, 0.2);
+    color: #0891b2;
 }
 
 .inline-panel-content {

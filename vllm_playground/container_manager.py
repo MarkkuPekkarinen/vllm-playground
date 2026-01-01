@@ -34,21 +34,31 @@ class VLLMContainerManager:
         Args:
             container_runtime: Container runtime to use (podman or docker)
             use_sudo: Run container commands with sudo.
-                      Default is True to ensure consistent container namespace for both CPU/GPU modes.
-                      Set VLLM_USE_SUDO=false to disable.
+                      Default behavior:
+                      - macOS: False (Docker Desktop and Podman run rootless)
+                      - Linux: True (for consistent GPU access and container namespace)
+                      Override with VLLM_USE_SUDO environment variable.
         """
         self.runtime = container_runtime
-        # Default to using sudo for consistent container management
-        # This ensures CPU and GPU containers are in the same namespace,
-        # making it simple to switch between modes without stale containers
+        
+        # Determine sudo behavior based on platform and environment
         if use_sudo is None:
-            sudo_env = os.environ.get("VLLM_USE_SUDO", "true").lower()
-            self.use_sudo = sudo_env not in ("false", "0", "no")
+            sudo_env = os.environ.get("VLLM_USE_SUDO")
+            if sudo_env is not None:
+                # Explicit environment override
+                self.use_sudo = sudo_env.lower() not in ("false", "0", "no")
+            elif platform.system() == "Darwin":
+                # macOS: Default to no sudo (Docker Desktop and Podman run rootless)
+                self.use_sudo = False
+                logger.info("macOS detected - running containers without sudo (rootless mode)")
+            else:
+                # Linux: Default to sudo for consistent GPU access
+                self.use_sudo = True
         else:
             self.use_sudo = use_sudo
         
         if self.use_sudo:
-            logger.info("Container manager initialized with sudo enabled (default for consistent CPU/GPU switching)")
+            logger.info("Container manager initialized with sudo enabled")
     
     def get_default_image(self, use_cpu: bool = False) -> str:
         """
@@ -93,8 +103,11 @@ class VLLMContainerManager:
         """
         Determine if sudo should be used for container commands.
         
-        Returns True by default to ensure consistent container namespace
-        for both CPU and GPU modes. Set VLLM_USE_SUDO=false to disable.
+        Platform-aware defaults:
+        - macOS: False (Docker Desktop and Podman run rootless)
+        - Linux: True (for consistent GPU access and container namespace)
+        
+        Override with VLLM_USE_SUDO environment variable.
         """
         return self.use_sudo
     
