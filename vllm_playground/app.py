@@ -28,8 +28,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Import container manager (optional - only needed for container mode)
+container_manager = None  # Initialize as None for when import fails
 try:
-    from container_manager import container_manager
+    from .container_manager import container_manager
     CONTAINER_MODE_AVAILABLE = True
 except ImportError:
     CONTAINER_MODE_AVAILABLE = False
@@ -134,6 +135,65 @@ def detect_tool_call_parser(model_name: str) -> Optional[str]:
     # Default: return None (tool calling won't be enabled for unknown models)
     # User can explicitly set tool_call_parser in config
     return None
+
+
+def normalize_tool_call(tool_call_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """
+    Normalize tool call data from various model formats to the standard format.
+    
+    Different models output tool calls in different formats:
+    - Standard: {"name": "func", "arguments": {...}}
+    - Llama 3.2: {"function": "func", "parameters": {...}}
+    - Some models: {"function_name": "func", "args": {...}}
+    
+    This function normalizes all formats to the standard format.
+    
+    Returns:
+        Normalized tool call dict or None if invalid
+    """
+    if not tool_call_data or not isinstance(tool_call_data, dict):
+        return None
+    
+    # Try to extract function name from various possible fields
+    name = None
+    for name_field in ['name', 'function', 'function_name', 'func', 'tool']:
+        if name_field in tool_call_data and isinstance(tool_call_data[name_field], str):
+            name = tool_call_data[name_field]
+            break
+    
+    # Try to extract arguments from various possible fields
+    arguments = None
+    for args_field in ['arguments', 'parameters', 'params', 'args', 'input']:
+        if args_field in tool_call_data:
+            args_value = tool_call_data[args_field]
+            if isinstance(args_value, dict):
+                arguments = args_value
+                break
+            elif isinstance(args_value, str):
+                # Try to parse as JSON
+                try:
+                    arguments = json.loads(args_value)
+                    break
+                except:
+                    arguments = {"raw": args_value}
+                    break
+    
+    if not name:
+        logger.warning(f"Could not extract function name from tool call: {tool_call_data}")
+        return None
+    
+    # Build normalized tool call
+    normalized = {
+        "id": tool_call_data.get("id", f"call_{hash(name) % 10000}"),
+        "type": "function",
+        "function": {
+            "name": name,
+            "arguments": json.dumps(arguments) if arguments else "{}"
+        }
+    }
+    
+    logger.info(f"🔧 Normalized tool call: {tool_call_data} -> {normalized}")
+    return normalized
 
 
 class ToolFunction(BaseModel):
@@ -587,7 +647,7 @@ async def get_status() -> ServerStatus:
     else:
         # If run mode is not set (e.g., after restart), check if container exists
         # This handles the case where Web UI restarts but vLLM pod is still running
-        if CONTAINER_MODE_AVAILABLE:
+        if CONTAINER_MODE_AVAILABLE and container_manager:
             status = await container_manager.get_container_status()
             if status.get('running', False):
                 running = True
@@ -639,7 +699,7 @@ async def debug_connection():
         }
         
         # Show what URL would be used
-        if current_run_mode == "container" and is_kubernetes:
+        if current_run_mode == "container" and is_kubernetes and container_manager:
             service_name = getattr(container_manager, 'SERVICE_NAME', 'vllm-service')
             namespace = getattr(container_manager, 'namespace', os.getenv('KUBERNETES_NAMESPACE', 'default'))
             url = f"http://{service_name}.{namespace}.svc.cluster.local:{current_config.port}/v1/chat/completions"
@@ -654,7 +714,7 @@ async def debug_connection():
             debug_info["url_would_use"] = url
             debug_info["connection_mode"] = "localhost"
     
-    if is_kubernetes and hasattr(container_manager, 'namespace'):
+    if is_kubernetes and container_manager and hasattr(container_manager, 'namespace'):
         debug_info["kubernetes"] = {
             "service_name": getattr(container_manager, 'SERVICE_NAME', 'N/A'),
             "namespace": container_manager.namespace,
@@ -674,7 +734,7 @@ async def test_vllm_connection():
     is_kubernetes = os.path.exists('/var/run/secrets/kubernetes.io/serviceaccount/token')
     
     # Determine URL to use
-    if current_run_mode == "container" and is_kubernetes:
+    if current_run_mode == "container" and is_kubernetes and container_manager:
         service_name = getattr(container_manager, 'SERVICE_NAME', 'vllm-service')
         namespace = getattr(container_manager, 'namespace', os.getenv('KUBERNETES_NAMESPACE', 'default'))
         base_url = f"http://{service_name}.{namespace}.svc.cluster.local:{current_config.port}"
@@ -875,7 +935,7 @@ async def start_server(config: VLLMConfig):
     global container_id, vllm_process, vllm_running, current_config, server_start_time, current_model_identifier, current_run_mode
     
     # Check if server is already running
-    if current_run_mode == "container":
+    if current_run_mode == "container" and CONTAINER_MODE_AVAILABLE and container_manager:
         status = await container_manager.get_container_status()
         if status.get('running', False):
             raise HTTPException(status_code=400, detail="Server is already running")
@@ -937,7 +997,7 @@ async def start_server(config: VLLMConfig):
         current_run_mode = config.run_mode
         
         # Validate container mode is available if selected
-        if config.run_mode == "container" and not CONTAINER_MODE_AVAILABLE:
+        if config.run_mode == "container" and (not CONTAINER_MODE_AVAILABLE or not container_manager):
             raise HTTPException(
                 status_code=400,
                 detail="Container mode is not available. container_manager module not found."
@@ -1244,7 +1304,7 @@ async def stop_server():
     global container_id, vllm_process, vllm_running, server_start_time, current_model_identifier, current_run_mode
     
     # Check if server is running based on mode
-    if current_run_mode == "container":
+    if current_run_mode == "container" and CONTAINER_MODE_AVAILABLE and container_manager:
         status = await container_manager.get_container_status()
         if not status.get('running', False):
             raise HTTPException(status_code=400, detail="Server is not running")
@@ -1298,6 +1358,10 @@ async def stop_server():
 async def read_logs_container():
     """Read logs from vLLM container"""
     global vllm_running
+    
+    if not container_manager:
+        logger.error("read_logs_container called but container_manager is not available")
+        return
     
     try:
         await broadcast_log("[WEBUI] Starting log stream from container...")
@@ -1521,7 +1585,7 @@ async def chat(request: ChatRequestWithStopTokens):
     global current_config, current_model_identifier, vllm_running, current_run_mode
     
     # Check server status based on mode
-    if current_run_mode == "container":
+    if current_run_mode == "container" and CONTAINER_MODE_AVAILABLE and container_manager:
         status = await container_manager.get_container_status()
         if not status.get('running', False):
             raise HTTPException(status_code=400, detail="vLLM server is not running")
@@ -1624,6 +1688,23 @@ async def chat(request: ChatRequestWithStopTokens):
                 for tool in request.tools
             ]
             logger.info(f"🔧 Tools enabled: {[t.function.name for t in request.tools]}")
+            
+            # Add format guidance to help models generate correct tool call JSON
+            # This helps models that use different formats (function vs name, parameters vs arguments)
+            tool_format_hint = (
+                '\n\nWhen calling a function, respond with JSON in this exact format: '
+                '{"name": "<function_name>", "arguments": {<parameters>}}'
+            )
+            # Inject hint into the last system message or first user message
+            for i, msg in enumerate(messages_dict):
+                if msg.get("role") == "system":
+                    messages_dict[i]["content"] = msg["content"] + tool_format_hint
+                    logger.info("🔧 Added tool format hint to system message")
+                    break
+            else:
+                # No system message found, add as a new system message at the beginning
+                messages_dict.insert(0, {"role": "system", "content": f"You are a helpful assistant.{tool_format_hint}"})
+                logger.info("🔧 Added system message with tool format hint")
         
         # Add tool_choice if provided
         if request.tool_choice is not None:
@@ -1829,7 +1910,9 @@ async def chat(request: ChatRequestWithStopTokens):
                         logger.error(f"Status: {response.status}")
                         logger.error(f"Error: {text}")
                         logger.error(f"===========================================")
-                        raise HTTPException(status_code=response.status, detail=text)
+                        # Provide meaningful error message even if vLLM returns empty body
+                        error_detail = text.strip() if text.strip() else f"vLLM server returned HTTP {response.status}"
+                        raise HTTPException(status_code=response.status, detail=error_detail)
                     
                     data = await response.json()
                     # Log the complete response
@@ -1852,9 +1935,21 @@ async def chat(request: ChatRequestWithStopTokens):
                     logger.info(f"=====================================")
                     return data
     
+    except HTTPException:
+        # Re-raise HTTPExceptions as-is (they already have proper status and detail)
+        raise
+    except aiohttp.ClientError as e:
+        # Handle aiohttp client errors (connection issues, timeouts, etc.)
+        error_msg = f"Connection error to vLLM server: {type(e).__name__}: {str(e) or 'Unknown error'}"
+        logger.error(f"Chat error: {error_msg}")
+        raise HTTPException(status_code=503, detail=error_msg)
     except Exception as e:
-        logger.error(f"Chat error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # Handle all other errors with detailed logging
+        import traceback
+        error_msg = str(e) if str(e) else f"{type(e).__name__}: Unknown error"
+        logger.error(f"Chat error: {error_msg}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=error_msg)
 
 
 class CompletionRequest(BaseModel):
@@ -2172,7 +2267,7 @@ async def completion(request: CompletionRequest):
     global current_config, current_model_identifier, current_run_mode
     
     # Check server status based on mode
-    if current_run_mode == "container":
+    if current_run_mode == "container" and CONTAINER_MODE_AVAILABLE and container_manager:
         status = await container_manager.get_container_status()
         if not status.get('running', False):
             raise HTTPException(status_code=400, detail="vLLM server is not running")
@@ -2907,7 +3002,7 @@ async def check_vllm_health():
     global current_config, vllm_process, current_run_mode
     
     # Check if server is running
-    if current_run_mode == "container":
+    if current_run_mode == "container" and CONTAINER_MODE_AVAILABLE and container_manager:
         status = await container_manager.get_container_status()
         if not status.get('running', False):
             return {"success": False, "status_code": 503, "error": "Server not running"}
@@ -2946,7 +3041,7 @@ async def get_vllm_metrics():
     global current_config, latest_vllm_metrics, metrics_timestamp, current_run_mode
     
     # Check server status based on mode
-    if current_run_mode == "container":
+    if current_run_mode == "container" and CONTAINER_MODE_AVAILABLE and container_manager:
         status = await container_manager.get_container_status()
         if not status.get('running', False):
             return JSONResponse(
@@ -3061,7 +3156,7 @@ async def start_benchmark(config: BenchmarkConfig):
     global current_config, benchmark_task, benchmark_results, current_run_mode
     
     # Check server status based on mode
-    if current_run_mode == "container":
+    if current_run_mode == "container" and CONTAINER_MODE_AVAILABLE and container_manager:
         status = await container_manager.get_container_status()
         if not status.get('running', False):
             raise HTTPException(status_code=400, detail="vLLM server is not running")

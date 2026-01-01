@@ -1905,7 +1905,9 @@ async def chat(request: ChatRequestWithStopTokens):
                         logger.error(f"Status: {response.status}")
                         logger.error(f"Error: {text}")
                         logger.error(f"===========================================")
-                        raise HTTPException(status_code=response.status, detail=text)
+                        # Provide meaningful error message even if vLLM returns empty body
+                        error_detail = text.strip() if text.strip() else f"vLLM server returned HTTP {response.status}"
+                        raise HTTPException(status_code=response.status, detail=error_detail)
                     
                     data = await response.json()
                     # Log the complete response
@@ -1928,9 +1930,21 @@ async def chat(request: ChatRequestWithStopTokens):
                     logger.info(f"=====================================")
                     return data
     
+    except HTTPException:
+        # Re-raise HTTPExceptions as-is (they already have proper status and detail)
+        raise
+    except aiohttp.ClientError as e:
+        # Handle aiohttp client errors (connection issues, timeouts, etc.)
+        error_msg = f"Connection error to vLLM server: {type(e).__name__}: {str(e) or 'Unknown error'}"
+        logger.error(f"Chat error: {error_msg}")
+        raise HTTPException(status_code=503, detail=error_msg)
     except Exception as e:
-        logger.error(f"Chat error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # Handle all other errors with detailed logging
+        import traceback
+        error_msg = str(e) if str(e) else f"{type(e).__name__}: Unknown error"
+        logger.error(f"Chat error: {error_msg}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=error_msg)
 
 
 class CompletionRequest(BaseModel):

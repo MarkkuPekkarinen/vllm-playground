@@ -3,10 +3,10 @@
 A modern web interface for managing and interacting with vLLM servers (www.github.com/vllm-project/vllm). Supports both GPU and CPU modes, with special optimizations for macOS Apple Silicon and enterprise deployment on OpenShift/Kubernetes.
 
 ### ✨ New UI with Tool Calling Support
-![vLLM Playground Interface](assets/vllm-playground-newUI.png)
+![vLLM Playground Interface](https://raw.githubusercontent.com/micytao/vllm-playground/main/assets/vllm-playground-newUI.png)
 
 ### ✨ New UI with Structured Outputs Support
-![vLLM Playground with Structured Outputs](assets/vllm-playground-structured-outputs.png)
+![vLLM Playground with Structured Outputs](https://raw.githubusercontent.com/micytao/vllm-playground/main/assets/vllm-playground-structured-outputs.png)
 
 ### ✨ New UI Enhancements
 
@@ -40,7 +40,7 @@ Open http://localhost:7860 in your browser - that's it! 🚀
 
 > 💡 **Tip**: The `vllm-playground pull` command pre-downloads the large container image with progress display, so you don't have to wait during server startup!
 
-![Pre-pull Container Image](assets/vllm-playground-pull.png)
+![Pre-pull Container Image](https://raw.githubusercontent.com/micytao/vllm-playground/main/assets/vllm-playground-pull.png)
 
 *Pre-download the ~10GB GPU container image with progress display - no more waiting during server startup!*
 
@@ -69,13 +69,13 @@ vllm-playground
 
 **📹 Watch Demo: Automatic Container Startup**
 
-![Start vLLM Demo](assets/start-vllm.gif)
+![Start vLLM Demo](https://raw.githubusercontent.com/micytao/vllm-playground/main/assets/start-vllm.gif)
 
 *See how easy it is: Just click "Start Server" and the container orchestrator automatically starts the vLLM container - no manual installation or configuration needed!*
 
 **📹 Watch Demo: Automatic Container Shutdown**
 
-![Stop vLLM Demo](assets/stop-vllm.gif)
+![Stop vLLM Demo](https://raw.githubusercontent.com/micytao/vllm-playground/main/assets/stop-vllm.gif)
 
 *Clean shutdown: Click "Stop Server" and the container orchestrator gracefully stops the vLLM container with automatic cleanup!*
 
@@ -95,17 +95,17 @@ vllm-playground
 
 Integrated GuideLLM for comprehensive performance benchmarking and analysis. Run load tests and get detailed metrics on throughput, latency, and token generation performance!
 
-![GuideLLM Benchmark Results](assets/guidellm.png)
+![GuideLLM Benchmark Results](https://raw.githubusercontent.com/micytao/vllm-playground/main/assets/guidellm.png)
 
 ## 📚 New: vLLM Community Recipes
 
 **One-click model configurations from the official [vLLM Recipes Repository](https://github.com/vllm-project/recipes)!** Browse community-maintained configurations for popular models like DeepSeek, Qwen, Llama, Mistral, and more.
 
-![vLLM Recipes Browser](assets/vllm-recipes-1.png)
+![vLLM Recipes Browser](https://raw.githubusercontent.com/micytao/vllm-playground/main/assets/vllm-recipes-1.png)
 
 *Browse 17+ model categories with optimized configurations - just click "Load Config" to auto-fill all settings!*
 
-![vLLM Recipes Details](assets/vllm-recipes-2.png)
+![vLLM Recipes Details](https://raw.githubusercontent.com/micytao/vllm-playground/main/assets/vllm-recipes-2.png)
 
 *Each recipe includes hardware requirements, vLLM parameters, and direct links to documentation.*
 
@@ -415,7 +415,7 @@ nano config/vllm_cpu.env
   - **JSON Schema**: Generate valid JSON matching your schema
   - **Grammar (EBNF)**: Define complex output structures
   
-  ![Structured Outputs](assets/vllm-playground-structured-outputs.png)
+  ![Structured Outputs](https://raw.githubusercontent.com/micytao/vllm-playground/main/assets/vllm-playground-structured-outputs.png)
   
   *Structured Outputs with Choice mode for sentiment analysis - responses constrained to "positive", "negative", or "neutral"*
 
