@@ -1998,11 +1998,19 @@ number ::= [0-9]+`
             const toolsConfig = this.getToolsForRequest();
             
             // Build request body
+            // Check if tools are being used - use non-streaming for tool calls
+            // vLLM streaming has issues with tool_calls data not being sent properly
+            const useStreaming = !toolsConfig.tools || toolsConfig.tools.length === 0 || toolsConfig.tool_choice === 'none';
+            
+            if (!useStreaming) {
+                console.log('🔧 Tools detected - using non-streaming mode for reliable tool call response');
+            }
+            
             const requestBody = {
                 messages: messagesToSend,  // Send messages with system prompt prepended
                 temperature: parseFloat(this.elements.temperature.value),
                 max_tokens: parseInt(this.elements.maxTokens.value),
-                stream: true
+                stream: useStreaming
                 // No stop_tokens - let vLLM handle them automatically
             };
             
@@ -2040,6 +2048,70 @@ number ::= [0-9]+`
             if (!response.ok) {
                 const errorText = await response.text();
                 throw new Error(errorText || 'Failed to send message');
+            }
+            
+            // Handle non-streaming response (used for tool calls)
+            if (!useStreaming) {
+                console.log('📥 Processing non-streaming response...');
+                const jsonResponse = await response.json();
+                console.log('📥 Full response:', jsonResponse);
+                
+                if (jsonResponse.choices && jsonResponse.choices.length > 0) {
+                    const choice = jsonResponse.choices[0];
+                    const message = choice.message;
+                    
+                    if (message && message.tool_calls && message.tool_calls.length > 0) {
+                        // Display tool calls
+                        console.log('🔧 Tool calls received:', message.tool_calls);
+                        const toolCallsHtml = this.formatToolCallMessage(message.tool_calls);
+                        textSpan.innerHTML = toolCallsHtml;
+                        assistantMessageDiv.classList.add('tool-call');
+                        
+                        // Add to chat history
+                        this.chatHistory.push({
+                            role: 'assistant',
+                            content: null,
+                            tool_calls: message.tool_calls
+                        });
+                    } else if (message && message.content) {
+                        // Display text content
+                        textSpan.textContent = message.content;
+                        this.chatHistory.push({role: 'assistant', content: message.content});
+                    } else {
+                        textSpan.textContent = 'No response from model';
+                        textSpan.classList.add('message-text');
+                        assistantMessageDiv.classList.add('error');
+                    }
+                    
+                    // Show usage metrics if available
+                    if (jsonResponse.usage) {
+                        usageData = jsonResponse.usage;
+                        console.log('Usage data:', usageData);
+                    }
+                } else {
+                    textSpan.textContent = 'Invalid response from server';
+                    textSpan.classList.add('message-text');
+                    assistantMessageDiv.classList.add('error');
+                }
+                
+                // Calculate and display metrics for non-streaming
+                const endTime = Date.now();
+                const timeTaken = (endTime - startTime) / 1000;
+                
+                const promptTokens = usageData?.prompt_tokens || 0;
+                const completionTokens = usageData?.completion_tokens || 0;
+                const totalTokens = usageData?.total_tokens || (promptTokens + completionTokens);
+                
+                this.updateChatMetrics({
+                    promptTokens: promptTokens,
+                    completionTokens: completionTokens,
+                    totalTokens: totalTokens,
+                    timeTaken: timeTaken,
+                    tokensPerSecond: completionTokens > 0 ? (completionTokens / timeTaken).toFixed(2) : 0
+                });
+                
+                console.log('Non-streaming response completed');
+                return;
             }
             
             // Read the streaming response
@@ -2092,12 +2164,13 @@ number ::= [0-9]+`
                                     if (!this.pendingToolCalls) {
                                         this.pendingToolCalls = [];
                                     }
+                                    console.log('🔧 Received tool_calls in delta:', choice.delta.tool_calls);
                                     for (const tc of choice.delta.tool_calls) {
-                                        const idx = tc.index || 0;
+                                        const idx = tc.index ?? 0;  // Use nullish coalescing
                                         if (!this.pendingToolCalls[idx]) {
                                             this.pendingToolCalls[idx] = {
                                                 id: tc.id || '',
-                                                type: 'function',
+                                                type: tc.type || 'function',
                                                 function: { name: '', arguments: '' }
                                             };
                                         }
@@ -2110,7 +2183,14 @@ number ::= [0-9]+`
                                 }
                                 // Check for tool calls in message (non-streaming)
                                 else if (choice.message && choice.message.tool_calls) {
+                                    console.log('🔧 Received tool_calls in message:', choice.message.tool_calls);
                                     this.pendingToolCalls = choice.message.tool_calls;
+                                    textSpan.innerHTML = '🔧 <em>Tool call requested</em>';
+                                }
+                                // Check for tool calls directly in choice (some vLLM versions)
+                                else if (choice.tool_calls) {
+                                    console.log('🔧 Received tool_calls directly in choice:', choice.tool_calls);
+                                    this.pendingToolCalls = choice.tool_calls;
                                     textSpan.innerHTML = '🔧 <em>Tool call requested</em>';
                                 }
                                 
@@ -2166,6 +2246,10 @@ number ::= [0-9]+`
             // Debug: Log raw chunks if tools were requested but no tool calls captured
             if (toolsWereRequested && (!this.pendingToolCalls || this.pendingToolCalls.length === 0)) {
                 console.warn('⚠️ Tools were requested but no tool_calls in response. Raw chunks:', rawChunks);
+                // Store for debugging and log full structure
+                window.lastRawChunks = rawChunks;
+                console.warn('📋 Full chunk structure (copy this for debugging):');
+                console.warn(JSON.stringify(rawChunks, null, 2));
             }
             
             console.log('Finalizing response, fullText length:', fullText.length);
@@ -2227,7 +2311,20 @@ number ::= [0-9]+`
                             c?.choices?.[0]?.message?.tool_calls
                         );
                         
-                        if (hasPartialToolCall) {
+                        if (finishReason === 'tool_calls') {
+                            // Model tried to use tools but we didn't capture the data
+                            errorMsg += `\n⚠️ Model attempted tool call but data wasn't captured.\n`;
+                            errorMsg += `This may be a streaming format issue.\n\n`;
+                            errorMsg += `Debug info in browser console (F12).\n`;
+                            errorMsg += `Look for: "Raw chunks" to see actual response.`;
+                            
+                            // Log detailed debug info
+                            console.error('🔧 TOOL CALL DEBUG:');
+                            console.error('  Finish reason:', finishReason);
+                            console.error('  Pending tool calls:', this.pendingToolCalls);
+                            console.error('  Has partial tool call:', hasPartialToolCall);
+                            console.error('  Raw chunks:', JSON.stringify(rawChunks, null, 2));
+                        } else if (hasPartialToolCall) {
                             errorMsg += `\nPartial tool call detected but may be malformed.\n`;
                             errorMsg += `Check browser console for raw response data.`;
                         } else {

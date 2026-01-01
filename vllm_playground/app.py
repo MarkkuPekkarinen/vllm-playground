@@ -1691,12 +1691,26 @@ async def chat(request: ChatRequestWithStopTokens):
                                                     if data_str and data_str != "[DONE]":
                                                         data = json.loads(data_str)
                                                         if 'choices' in data and len(data['choices']) > 0:
-                                                            delta = data['choices'][0].get('delta', {})
+                                                            choice = data['choices'][0]
+                                                            delta = choice.get('delta', {})
                                                             content = delta.get('content', '')
+                                                            finish_reason = choice.get('finish_reason')
+                                                            
                                                             if content:
                                                                 full_response_text += content
-                                                except:
-                                                    pass
+                                                            
+                                                            # Log tool calls if present
+                                                            if delta.get('tool_calls'):
+                                                                logger.info(f"🔧 Streaming tool_calls in delta: {delta['tool_calls']}")
+                                                            
+                                                            # Log finish reason for debugging
+                                                            if finish_reason:
+                                                                logger.info(f"🏁 Finish reason: {finish_reason}")
+                                                                if finish_reason == 'tool_calls' and not delta.get('tool_calls'):
+                                                                    logger.warning(f"⚠️ finish_reason is 'tool_calls' but no tool_calls data in delta!")
+                                                                    logger.warning(f"⚠️ Full chunk data: {data}")
+                                                except Exception as parse_err:
+                                                    logger.debug(f"Failed to parse SSE data: {parse_err}")
                                             # Pass through the SSE formatted data
                                             yield line + '\n'
                             
