@@ -2243,10 +2243,11 @@ number ::= [0-9]+`
                     }
                     
                     textSpan.textContent = errorMsg;
-                    textSpan.style.whiteSpace = 'pre-wrap';
+                    textSpan.classList.add('message-text');  // Add class for proper styling
                     console.error('Tool calling failed. Raw chunks:', rawChunks);
                 } else {
                     textSpan.textContent = 'No response from model';
+                    textSpan.classList.add('message-text');
                 }
                 assistantMessageDiv.classList.add('error');
             }
