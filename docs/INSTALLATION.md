@@ -241,6 +241,19 @@ pip install mcp
 # Then configure MCP servers in the UI
 ```
 
+#### MCP Server Dependencies (STDIO Transport Only)
+
+MCP servers using **STDIO transport** (local command execution) require specific runtimes:
+
+| Server Type | Requires | Installation |
+|-------------|----------|--------------|
+| **Node.js servers** (filesystem) | `npx` | `brew install node` (macOS) or https://nodejs.org/ |
+| **Python servers** (git, fetch, time) | `uvx` | `brew install uv` (macOS) or https://docs.astral.sh/uv/ |
+
+> **Note:** SSE transport (HTTP endpoints) doesn't require these - it connects to remote servers directly.
+
+The UI will show helpful error messages if these are missing when you try to connect.
+
 ---
 
 ## 🆘 Troubleshooting

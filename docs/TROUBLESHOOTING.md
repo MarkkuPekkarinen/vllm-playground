@@ -66,6 +66,28 @@ podman pull vllm/vllm-openai:v0.11.0                  # GPU (official)
 
 ---
 
+## MCP Server Issues
+
+### "Command not found" (npx, uvx)
+
+MCP servers using **STDIO transport** require specific runtimes:
+
+| Command | Required For | Installation |
+|---------|--------------|--------------|
+| `npx` | Filesystem server | Install Node.js: `brew install node` (macOS) or https://nodejs.org/ |
+| `uvx` | Git, Fetch, Time servers | Install uv: `brew install uv` (macOS) or https://docs.astral.sh/uv/ |
+
+**Verify installation:**
+```bash
+# Check if npx is available
+npx --version
+
+# Check if uvx is available
+uvx --version
+```
+
+---
+
 ## Tool Calling Issues
 
 ### Tool Calling Not Working

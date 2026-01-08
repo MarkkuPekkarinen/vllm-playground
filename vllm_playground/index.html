@@ -1200,6 +1200,12 @@
                                         <li>Only use trusted MCP servers</li>
                                         <li>Review each tool call before executing</li>
                                     </ul>
+                                    <strong>STDIO Transport Dependencies</strong>
+                                    <ul>
+                                        <li><code>npx</code> (Node.js) - Required for Filesystem server</li>
+                                        <li><code>uvx</code> (uv) - Required for Git, Fetch, Time servers</li>
+                                        <li>SSE transport connects to remote URLs, no local dependencies needed</li>
+                                    </ul>
                                 </div>
                             </div>
 

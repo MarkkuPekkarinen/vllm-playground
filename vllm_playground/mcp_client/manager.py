@@ -7,6 +7,7 @@ a unified interface for tool discovery and execution.
 
 import asyncio
 import logging
+import shutil
 from typing import Dict, List, Optional, Any, Set
 from contextlib import asynccontextmanager
 
@@ -19,6 +20,83 @@ from .config import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Installation instructions for common MCP commands
+COMMAND_INSTALL_HINTS = {
+    "npx": {
+        "check": "npx",
+        "name": "Node.js/npm",
+        "install": {
+            "macos": "brew install node",
+            "linux": "sudo apt install nodejs npm  # or: sudo dnf install nodejs npm",
+            "windows": "Download from https://nodejs.org/",
+            "generic": "Install Node.js from https://nodejs.org/"
+        }
+    },
+    "uvx": {
+        "check": "uvx",
+        "name": "uv (Python package manager)",
+        "install": {
+            "macos": "brew install uv  # or: curl -LsSf https://astral.sh/uv/install.sh | sh",
+            "linux": "curl -LsSf https://astral.sh/uv/install.sh | sh",
+            "windows": "powershell -c \"irm https://astral.sh/uv/install.ps1 | iex\"",
+            "generic": "Install uv from https://docs.astral.sh/uv/"
+        }
+    },
+    "node": {
+        "check": "node",
+        "name": "Node.js",
+        "install": {
+            "generic": "Install Node.js from https://nodejs.org/"
+        }
+    },
+    "python": {
+        "check": "python",
+        "name": "Python",
+        "install": {
+            "generic": "Install Python from https://python.org/"
+        }
+    }
+}
+
+
+def check_command_available(command: str) -> tuple[bool, Optional[str]]:
+    """
+    Check if a command is available in the system PATH.
+    Returns (is_available, error_message_if_not)
+    """
+    import platform
+    
+    # Get the base command (first word)
+    base_command = command.split()[0] if command else ""
+    
+    if not base_command:
+        return False, "No command specified"
+    
+    # Check if command exists
+    if shutil.which(base_command):
+        return True, None
+    
+    # Command not found - generate helpful error message
+    system = platform.system().lower()
+    if system == "darwin":
+        system = "macos"
+    
+    hint = COMMAND_INSTALL_HINTS.get(base_command)
+    if hint:
+        install_cmd = hint["install"].get(system, hint["install"].get("generic", ""))
+        error_msg = (
+            f"Command '{base_command}' not found. "
+            f"{hint['name']} is required.\n\n"
+            f"To install:\n{install_cmd}"
+        )
+    else:
+        error_msg = (
+            f"Command '{base_command}' not found. "
+            f"Please install it and ensure it's in your PATH."
+        )
+    
+    return False, error_msg
 
 # Check MCP availability
 try:
@@ -73,6 +151,13 @@ class MCPServerConnection:
         """Connect via stdio transport"""
         if not self.config.command:
             self.error = "No command specified for stdio transport"
+            return False
+        
+        # Check if the command is available before attempting to connect
+        is_available, error_msg = check_command_available(self.config.command)
+        if not is_available:
+            self.error = error_msg
+            logger.error(f"MCP server '{self.config.name}': {error_msg}")
             return False
         
         try:
