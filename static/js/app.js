@@ -1,4 +1,7 @@
 // vLLM Playground - Main JavaScript
+import { initMCPModule } from './modules/mcp.js';
+import { initGuideLLMModule } from './modules/guidellm.js';
+
 class VLLMWebUI {
     constructor() {
         this.ws = null;
@@ -28,6 +31,18 @@ class VLLMWebUI {
         
         // Theme state
         this.currentTheme = localStorage.getItem('vllm-theme') || 'dark';
+        
+        // GuideLLM state
+        this.guidellmAvailable = false;
+        
+        // MCP (Model Context Protocol) state
+        this.mcpAvailable = false;
+        this.mcpConfigs = [];           // All configured MCP servers
+        this.mcpSelectedServers = [];   // Servers selected for chat
+        this.mcpEnabled = false;        // Whether MCP is enabled in chat
+        this.mcpTools = [];             // Tools from selected servers
+        this.mcpPresets = [];           // Built-in presets
+        this.mcpDisabledTools = new Set(); // Disabled tools (server:toolName format) - all enabled by default
         
         this.init();
     }
@@ -251,10 +266,9 @@ class VLLMWebUI {
         // Initialize chat template for default model (silent mode - no notification)
         this.updateTemplateForModel(true);
         
-        // Initialize benchmark command preview
-        this.updateBenchmarkCommandPreview();
+        // NOTE: Benchmark command preview is initialized by GuideLLM module
         
-        // Check feature availability
+        // Check feature availability (also initializes GuideLLM and MCP modules)
         this.checkFeatureAvailability();
         
         // Connect WebSocket for logs
@@ -406,6 +420,11 @@ class VLLMWebUI {
                     // Update benchmark server status
                     this.updateBenchmarkServerStatus();
                     break;
+                case 'mcp-config':
+                    viewTitle.innerHTML = '<span class="view-title-icon icon-mcp-header"></span> MCP Servers';
+                    // Refresh MCP config view
+                    this.refreshMCPConfigView();
+                    break;
                 default:
                     viewTitle.textContent = viewId;
             }
@@ -456,37 +475,7 @@ class VLLMWebUI {
         this.showNotification(`Switched to ${newTheme} mode`, 'info');
     }
     
-    updateBenchmarkServerStatus() {
-        const statusBanner = document.getElementById('benchmark-server-status');
-        if (!statusBanner) return;
-        
-        if (this.serverRunning && this.serverReady) {
-            statusBanner.classList.add('connected');
-            statusBanner.innerHTML = `
-                <div class="server-status-content">
-                    <span class="status-icon">✅</span>
-                    <span class="status-message">vLLM server is running and ready for benchmarks</span>
-                </div>
-            `;
-        } else if (this.serverRunning) {
-            statusBanner.classList.remove('connected');
-            statusBanner.innerHTML = `
-                <div class="server-status-content">
-                    <span class="status-icon">⏳</span>
-                    <span class="status-message">vLLM server is starting up...</span>
-                </div>
-            `;
-        } else {
-            statusBanner.classList.remove('connected');
-            statusBanner.innerHTML = `
-                <div class="server-status-content">
-                    <span class="status-icon">⚠️</span>
-                    <span class="status-message">Start the vLLM server first to run benchmarks</span>
-                    <button class="btn btn-primary btn-sm" onclick="window.vllmUI.switchView('vllm-server')">Go to Server →</button>
-                </div>
-            `;
-        }
-    }
+    // NOTE: updateBenchmarkServerStatus is injected by GuideLLM module
 
     initToolCalling() {
         // Initialize popover system
@@ -721,11 +710,11 @@ class VLLMWebUI {
             toolsBtn.classList.toggle('modified', hasTools);
         }
         
-        // MCP - check if any servers are configured
+        // MCP - check if MCP is enabled in chat with selected servers
         const mcpBtn = document.getElementById('toolbar-mcp');
         if (mcpBtn) {
-            const hasMcpServers = (this.mcpServers?.length || 0) > 0;
-            mcpBtn.classList.toggle('modified', hasMcpServers);
+            const mcpActive = this.mcpEnabled && (this.mcpSelectedServers?.length || 0) > 0;
+            mcpBtn.classList.toggle('modified', mcpActive);
         }
     }
     
@@ -1124,35 +1113,7 @@ number ::= [0-9]+`
         // Copy command button
         this.elements.copyCommandBtn.addEventListener('click', () => this.copyCommand());
         
-        // Benchmark
-        this.elements.runBenchmarkBtn.addEventListener('click', () => this.runBenchmark());
-        this.elements.stopBenchmarkBtn.addEventListener('click', () => this.stopBenchmark());
-        
-        // Benchmark config changes - update command preview
-        const benchmarkConfigElements = [
-            this.elements.benchmarkRequests,
-            this.elements.benchmarkRate,
-            this.elements.benchmarkPromptTokens,
-            this.elements.benchmarkOutputTokens,
-            this.elements.host,  // Also update when host changes
-            this.elements.port   // Also update when port changes
-        ];
-        
-        benchmarkConfigElements.forEach(element => {
-            element.addEventListener('input', () => this.updateBenchmarkCommandPreview());
-            element.addEventListener('change', () => this.updateBenchmarkCommandPreview());
-        });
-        
-        // Benchmark method toggle
-        this.elements.benchmarkMethodBuiltin.addEventListener('change', () => this.updateBenchmarkCommandPreview());
-        this.elements.benchmarkMethodGuidellm.addEventListener('change', () => this.updateBenchmarkCommandPreview());
-        
-        // Copy benchmark command button
-        this.elements.copyBenchmarkCommandBtn.addEventListener('click', () => this.copyBenchmarkCommand());
-        this.elements.copyGuidellmOutputBtn.addEventListener('click', () => this.copyGuidellmOutput());
-        this.elements.toggleRawOutputBtn.addEventListener('click', () => this.toggleRawOutput());
-        this.elements.copyGuidellmJsonBtn.addEventListener('click', () => this.copyGuidellmJson());
-        this.elements.toggleJsonOutputBtn.addEventListener('click', () => this.toggleJsonOutput());
+        // NOTE: Benchmark listeners are set up in GuideLLM module (modules/guidellm.js)
         
         // Template Settings
         this.elements.templateSettingsToggle.addEventListener('click', () => this.toggleTemplateSettings());
@@ -1220,10 +1181,59 @@ number ::= [0-9]+`
                 console.warn('GuideLLM is not available. Install with: pip install guidellm');
             }
             
+            // Handle vLLM availability (for subprocess mode)
+            this.vllmInstalled = features.vllm_installed || false;
+            this.vllmVersion = features.vllm_version || null;
+            this.containerModeAvailable = features.container_mode || false;
+            this.updateRunModeAvailability();
+            
+            // Handle MCP availability
+            this.mcpAvailable = features.mcp || false;
+            initMCPModule(this);
+            
+            // Handle GuideLLM availability
+            this.guidellmAvailable = features.guidellm || false;
+            initGuideLLMModule(this);
+            
+            // Update container runtime status
+            this.updateContainerRuntimeStatus(features.container_runtime, features.container_mode);
+            
+            // Update version display
+            this.updateVersionDisplay(features.version);
+            
             // Check hardware capabilities
             await this.checkHardwareCapabilities();
         } catch (error) {
             console.error('Error checking feature availability:', error);
+        }
+    }
+    
+    updateContainerRuntimeStatus(runtime, available) {
+        const statusEl = document.getElementById('container-runtime-status');
+        if (!statusEl) return;
+        
+        const textEl = statusEl.querySelector('.feature-status-text');
+        
+        statusEl.classList.remove('available', 'unavailable');
+        
+        if (available && runtime) {
+            statusEl.classList.add('available');
+            textEl.textContent = runtime.charAt(0).toUpperCase() + runtime.slice(1);
+            statusEl.title = `Container Runtime: ${runtime} (available)`;
+        } else {
+            statusEl.classList.add('unavailable');
+            textEl.textContent = 'No Runtime';
+            statusEl.title = 'No container runtime available (podman/docker not found)';
+        }
+    }
+    
+    updateVersionDisplay(version) {
+        const versionEl = document.getElementById('nav-version');
+        if (!versionEl) return;
+        
+        if (version) {
+            versionEl.textContent = `v${version}`;
+            versionEl.title = `vLLM Playground version ${version}`;
         }
     }
     
@@ -1471,15 +1481,54 @@ number ::= [0-9]+`
         if (isSubprocess) {
             this.elements.runModeSubprocessLabel.classList.add('active');
             this.elements.runModeContainerLabel.classList.remove('active');
-            this.elements.runModeHelpText.textContent = 'Subprocess: Direct execution (simpler, local dev)';
+            
+            // Check if vLLM is installed
+            if (!this.vllmInstalled) {
+                this.elements.runModeHelpText.innerHTML = '<span style="color: var(--error-color);">⚠️ vLLM not installed. Run: pip install vllm</span>';
+            } else {
+                const versionText = this.vllmVersion ? `v${this.vllmVersion}` : 'version unknown';
+                this.elements.runModeHelpText.textContent = `Subprocess: Direct execution using vLLM (${versionText})`;
+            }
         } else {
             this.elements.runModeSubprocessLabel.classList.remove('active');
             this.elements.runModeContainerLabel.classList.add('active');
-            this.elements.runModeHelpText.textContent = 'Container: Isolated environment (recommended for production)';
+            
+            if (!this.containerModeAvailable) {
+                this.elements.runModeHelpText.innerHTML = '<span style="color: var(--error-color);">⚠️ No container runtime (podman/docker) found</span>';
+            } else {
+                this.elements.runModeHelpText.textContent = 'Container: Isolated environment (recommended)';
+            }
         }
         
         // Update command preview
         this.updateCommandPreview();
+    }
+    
+    updateRunModeAvailability() {
+        // Update UI based on what's available
+        const subprocessLabel = this.elements.runModeSubprocessLabel;
+        const containerLabel = this.elements.runModeContainerLabel;
+        
+        // Add visual indication for unavailable modes
+        if (!this.vllmInstalled) {
+            subprocessLabel.classList.add('mode-unavailable');
+            subprocessLabel.title = 'vLLM not installed. Run: pip install vllm';
+        } else {
+            subprocessLabel.classList.remove('mode-unavailable');
+            const versionText = this.vllmVersion ? `v${this.vllmVersion}` : 'version unknown';
+            subprocessLabel.title = `vLLM (${versionText}) installed`;
+        }
+        
+        if (!this.containerModeAvailable) {
+            containerLabel.classList.add('mode-unavailable');
+            containerLabel.title = 'No container runtime (podman/docker) found';
+        } else {
+            containerLabel.classList.remove('mode-unavailable');
+            containerLabel.title = 'Container mode available';
+        }
+        
+        // Trigger toggleRunMode to update help text
+        this.toggleRunMode();
     }
 
     toggleModelSource() {
@@ -1810,6 +1859,19 @@ number ::= [0-9]+`
     async startServer() {
         const config = this.getConfig();
         
+        // Check run mode requirements
+        if (config.run_mode === 'subprocess' && !this.vllmInstalled) {
+            this.showNotification('⚠️ Cannot use Subprocess mode: vLLM is not installed. Please install vLLM (pip install vllm) or switch to Container mode.', 'error');
+            this.addLog('❌ Subprocess mode requires vLLM to be installed. Run: pip install vllm', 'error');
+            return;
+        }
+        
+        if (config.run_mode === 'container' && !this.containerModeAvailable) {
+            this.showNotification('⚠️ Cannot use Container mode: No container runtime found. Please install podman or docker.', 'error');
+            this.addLog('❌ Container mode requires podman or docker to be installed.', 'error');
+            return;
+        }
+        
         // Validate local model path if using local model
         if (config.local_model_path) {
             this.addLog('🔍 Validating local model path...', 'info');
@@ -1994,8 +2056,32 @@ number ::= [0-9]+`
             // Stop tokens are only for reference/documentation in the UI
             // Users can still set custom_stop_tokens in the server config if needed
             
-            // Get tools configuration
-            const toolsConfig = this.getToolsForRequest();
+            // Get tools configuration - MCP and Custom Tools are SEPARATE
+            // MCP takes priority when enabled
+            let toolsConfig = { tools: null, tool_choice: null, parallel_tool_calls: null };
+            let usingMCPTools = false;
+            
+            if (this.mcpEnabled && typeof this.getMCPToolsForRequest === 'function') {
+                // MCP is enabled - use MCP tools
+                const mcpTools = this.getMCPToolsForRequest();
+                if (mcpTools.length > 0) {
+                    toolsConfig = {
+                        tools: mcpTools,
+                        tool_choice: 'auto',  // MCP always uses auto
+                        parallel_tool_calls: false  // Sequential for reliable execution
+                    };
+                    usingMCPTools = true;
+                    console.log('=== Using MCP Tools ===');
+                    console.log('MCP tools:', mcpTools.length);
+                    console.log('Tool names:', mcpTools.map(t => t.function?.name));
+                }
+            }
+            
+            if (!usingMCPTools) {
+                // MCP not enabled or no MCP tools - use custom tools from Tool Calling panel
+                toolsConfig = this.getToolsForRequest();
+                console.log('=== Using Custom Tools ===');
+            }
             
             // Build request body
             // Check if tools are being used - use non-streaming for tool calls
@@ -2013,6 +2099,9 @@ number ::= [0-9]+`
                 stream: useStreaming
                 // No stop_tokens - let vLLM handle them automatically
             };
+            
+            // Store flag for response handling (Phase 2: MCP tool execution)
+            this._currentRequestUsingMCP = usingMCPTools;
             
             // Add tools if configured
             console.log('=== sendMessage: toolsConfig ===', toolsConfig);
@@ -2061,20 +2150,42 @@ number ::= [0-9]+`
                     const message = choice.message;
                     
                     if (message && message.tool_calls && message.tool_calls.length > 0) {
-                        // Display tool calls
+                        // Display tool calls (and text content if present)
                         console.log('🔧 Tool calls received:', message.tool_calls);
-                        const toolCallsHtml = this.formatToolCallMessage(message.tool_calls);
-                        textSpan.innerHTML = toolCallsHtml;
+                        console.log('📝 Message content:', message.content);
+                        console.log('📝 Full message object:', JSON.stringify(message, null, 2));
+                        
+                        // Build HTML with optional text content + tool calls
+                        let fullHtml = '';
+                        
+                        // Show text content if present
+                        if (message.content && message.content.trim()) {
+                            console.log('📝 Adding text content to display');
+                            fullHtml += `<div class="assistant-text-content">${this.escapeHtml(message.content)}</div>`;
+                        } else {
+                            console.log('📝 No text content to display (null or empty)');
+                        }
+                        
+                        // Use different format for MCP vs custom tools
+                        if (this._currentRequestUsingMCP) {
+                            // MCP tools - show with Execute/Skip buttons
+                            fullHtml += this.formatMCPToolCallMessage(message.tool_calls);
+                        } else {
+                            // Custom tools - display only (manual handling)
+                            fullHtml += this.formatToolCallMessage(message.tool_calls);
+                        }
+                        
+                        textSpan.innerHTML = fullHtml;
                         assistantMessageDiv.classList.add('tool-call');
                         
-                        // Add to chat history
+                        // Add to chat history (include content if present)
                         this.chatHistory.push({
                             role: 'assistant',
-                            content: null,
+                            content: message.content || null,
                             tool_calls: message.tool_calls
                         });
                     } else if (message && message.content) {
-                        // Display text content
+                        // Display text content only
                         textSpan.textContent = message.content;
                         this.chatHistory.push({role: 'assistant', content: message.content});
                     } else {
@@ -2288,7 +2399,39 @@ number ::= [0-9]+`
                 if (!fullText || fullText.match(/^[\s\n\r]+$/)) {
                     textSpan.textContent = 'Model generated only whitespace. Try: 1) Clear system prompt, 2) Lower temperature, 3) Different model';
                     assistantMessageDiv.classList.add('error');
-                } else {
+                } 
+                // 4. Check for malformed tool call patterns in the text
+                // This happens when vLLM's tool parser fails but returns the raw output
+                else if (toolsWereRequested && this.detectMalformedToolCall(fullText)) {
+                    console.warn('⚠️ Detected malformed tool call in response text:', fullText);
+                    
+                    const errorMsg = `⚠️ Tool Parsing Error
+
+The model tried to call a tool but generated malformed JSON that couldn't be parsed.
+
+This usually happens when:
+• Max Tokens is too low (increase to 1024+)
+• Model is struggling with the tool call format
+• Too many tools available (simplify your setup)
+
+Suggestions:
+1. Increase "Max Tokens" in Chat Settings
+2. Use a larger model (Qwen 2.5 7B+, Llama 3.1 8B+)
+3. Use fewer tools / simpler MCP server
+
+Raw output (for debugging):
+${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
+                    
+                    textSpan.textContent = errorMsg;
+                    textSpan.classList.add('message-text');
+                    assistantMessageDiv.classList.add('error');
+                    
+                    // Also log to console for debugging
+                    console.error('🔧 MALFORMED TOOL CALL DETECTED:');
+                    console.error('  Full text:', fullText);
+                    console.error('  Check vLLM server logs for: "Error in extracting tool call from response"');
+                }
+                else {
                     textSpan.textContent = fullText;
                     this.chatHistory.push({role: 'assistant', content: fullText});
                 }
@@ -2725,6 +2868,93 @@ number ::= [0-9]+`
         return toast;
     }
 
+    /**
+     * Show a custom confirm dialog (replaces window.confirm)
+     * @param {Object} options - Configuration options
+     * @param {string} options.title - Dialog title
+     * @param {string} options.message - Dialog message
+     * @param {string} options.confirmText - Confirm button text (default: "Confirm")
+     * @param {string} options.cancelText - Cancel button text (default: "Cancel")
+     * @param {string} options.icon - Icon emoji (default: "⚠️")
+     * @param {string} options.type - Button type: "danger", "warning", "primary" (default: "danger")
+     * @returns {Promise<boolean>} - Resolves to true if confirmed, false if cancelled
+     */
+    showConfirm(options = {}) {
+        return new Promise((resolve) => {
+            const {
+                title = 'Confirm Action',
+                message = 'Are you sure you want to proceed?',
+                confirmText = 'Confirm',
+                cancelText = 'Cancel',
+                icon = '⚠️',
+                type = 'danger'
+            } = options;
+
+            const modal = document.getElementById('confirm-modal');
+            const overlay = document.getElementById('confirm-modal-overlay');
+            const iconEl = document.getElementById('confirm-modal-icon');
+            const titleEl = document.getElementById('confirm-modal-title');
+            const messageEl = document.getElementById('confirm-modal-message');
+            const confirmBtn = document.getElementById('confirm-modal-confirm');
+            const cancelBtn = document.getElementById('confirm-modal-cancel');
+
+            if (!modal) {
+                console.warn('Confirm modal not found, falling back to window.confirm');
+                resolve(window.confirm(message));
+                return;
+            }
+
+            // Set content
+            iconEl.textContent = icon;
+            titleEl.textContent = title;
+            messageEl.textContent = message;
+            confirmBtn.textContent = confirmText;
+            cancelBtn.textContent = cancelText;
+
+            // Set button type
+            confirmBtn.className = `btn btn-${type}`;
+
+            // Show modal
+            modal.style.display = 'flex';
+
+            // Cleanup function
+            const cleanup = () => {
+                modal.style.display = 'none';
+                confirmBtn.removeEventListener('click', handleConfirm);
+                cancelBtn.removeEventListener('click', handleCancel);
+                overlay.removeEventListener('click', handleCancel);
+                document.removeEventListener('keydown', handleKeydown);
+            };
+
+            const handleConfirm = () => {
+                cleanup();
+                resolve(true);
+            };
+
+            const handleCancel = () => {
+                cleanup();
+                resolve(false);
+            };
+
+            const handleKeydown = (e) => {
+                if (e.key === 'Escape') {
+                    handleCancel();
+                } else if (e.key === 'Enter') {
+                    handleConfirm();
+                }
+            };
+
+            // Add event listeners
+            confirmBtn.addEventListener('click', handleConfirm);
+            cancelBtn.addEventListener('click', handleCancel);
+            overlay.addEventListener('click', handleCancel);
+            document.addEventListener('keydown', handleKeydown);
+
+            // Focus confirm button
+            confirmBtn.focus();
+        });
+    }
+
     updateChatMetrics(metrics) {
         // Update all metric displays
         const promptTokensEl = document.getElementById('metric-prompt-tokens');
@@ -2885,6 +3115,9 @@ number ::= [0-9]+`
                 parser = 'internlm';
             } else if (model.includes('granite')) {
                 parser = 'granite-20b-fc';
+            } else {
+                // Default fallback - use hermes as a general-purpose parser
+                parser = 'hermes';
             }
         }
         
@@ -2893,10 +3126,10 @@ number ::= [0-9]+`
             this.elements.toolServerWarning.style.display = toolCallingEnabled ? 'none' : 'flex';
         }
         if (this.elements.toolServerStatus) {
-            if (toolCallingEnabled && parser) {
+            if (toolCallingEnabled) {
                 this.elements.toolServerStatus.style.display = 'flex';
                 if (this.elements.toolParserDisplay) {
-                    this.elements.toolParserDisplay.textContent = parser;
+                    this.elements.toolParserDisplay.textContent = parser || 'auto';
                 }
             } else {
                 this.elements.toolServerStatus.style.display = 'none';
@@ -2912,7 +3145,7 @@ number ::= [0-9]+`
         
         controlElements.forEach(el => {
             if (el) {
-                if (toolCallingEnabled && parser) {
+                if (toolCallingEnabled) {
                     el.classList.remove('tool-controls-disabled');
                 } else {
                     el.classList.add('tool-controls-disabled');
@@ -3066,444 +3299,9 @@ number ::= [0-9]+`
         }
     }
 
-    async runBenchmark() {
-        if (!this.serverRunning) {
-            this.showNotification('Server must be running to benchmark', 'warning');
-            return;
-        }
-
-        const config = {
-            total_requests: parseInt(this.elements.benchmarkRequests.value),
-            request_rate: parseFloat(this.elements.benchmarkRate.value),
-            prompt_tokens: parseInt(this.elements.benchmarkPromptTokens.value),
-            output_tokens: parseInt(this.elements.benchmarkOutputTokens.value),
-            use_guidellm: this.elements.benchmarkMethodGuidellm.checked
-        };
-
-        this.benchmarkRunning = true;
-        this.benchmarkStartTime = Date.now();
-        this.elements.runBenchmarkBtn.disabled = true;
-        this.elements.runBenchmarkBtn.style.display = 'none';
-        this.elements.stopBenchmarkBtn.disabled = false;
-        this.elements.stopBenchmarkBtn.style.display = 'inline-block';
-
-        // Hide placeholder, show progress
-        this.elements.metricsDisplay.style.display = 'none';
-        this.elements.metricsGrid.style.display = 'none';
-        this.elements.benchmarkProgress.style.display = 'block';
-
-        try {
-            const response = await fetch('/api/benchmark/start', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(config)
-            });
-
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.detail || 'Failed to start benchmark');
-            }
-
-            // Start polling for status
-            this.benchmarkPollInterval = setInterval(() => this.pollBenchmarkStatus(), 1000);
-
-        } catch (err) {
-            console.error('Failed to start benchmark:', err);
-            this.showNotification(`Failed to start benchmark: ${err.message}`, 'error');
-            this.resetBenchmarkUI();
-        }
-    }
-
-    async stopBenchmark() {
-        try {
-            await fetch('/api/benchmark/stop', {method: 'POST'});
-            this.showNotification('Benchmark stopped', 'info');
-        } catch (err) {
-            console.error('Failed to stop benchmark:', err);
-        }
-        this.resetBenchmarkUI();
-    }
-
-    async pollBenchmarkStatus() {
-        try {
-            const response = await fetch('/api/benchmark/status');
-            const data = await response.json();
-            
-            console.log('[POLL] Benchmark status:', data);
-
-            if (data.running) {
-                // GuideLLM doesn't output real-time progress, so we estimate based on time
-                const elapsed = Date.now() - this.benchmarkStartTime;
-                const estimated = (this.elements.benchmarkRequests.value / this.elements.benchmarkRate.value) * 1000;
-                
-                // Use a smoother curve that goes up to 98% (leaving 2% for completion)
-                let progress;
-                if (elapsed < estimated) {
-                    // Linear progress up to 90%
-                    progress = (elapsed / estimated) * 90;
-                } else {
-                    // Slow down after estimated time: 90% -> 98% over 2x the time
-                    const overtime = elapsed - estimated;
-                    const slowProgress = 90 + (Math.min(overtime / estimated, 1) * 8);
-                    progress = Math.min(98, slowProgress);
-                }
-                
-                console.log(`[POLL] Estimated progress: ${progress.toFixed(1)}% (${elapsed}ms elapsed, ${estimated}ms estimated)`);
-                
-                this.elements.progressFill.style.width = `${progress}%`;
-                this.elements.progressPercent.textContent = `${progress.toFixed(0)}%`;
-            } else {
-                // Benchmark complete
-                clearInterval(this.benchmarkPollInterval);
-                this.benchmarkPollInterval = null;
-
-                if (data.results) {
-                    console.log('[POLL] Benchmark completed with results');
-                    this.displayBenchmarkResults(data.results);
-                    this.showNotification('Benchmark completed!', 'success');
-                } else {
-                    console.error('[POLL] Benchmark completed but no results:', data);
-                    this.showNotification('Benchmark failed', 'error');
-                }
-
-                this.resetBenchmarkUI();
-            }
-        } catch (err) {
-            console.error('Failed to poll benchmark status:', err);
-        }
-    }
-
-    displayBenchmarkResults(results) {
-        // Hide progress
-        this.elements.benchmarkProgress.style.display = 'none';
-        
-        // Check if this is GuideLLM results (has raw_output) or built-in results
-        const isGuideLLM = results.raw_output && results.raw_output.length > 0;
-
-        // Debug: Log the results to console
-        console.log('=== BENCHMARK RESULTS DEBUG ===');
-        console.log('Full results object:', JSON.stringify(results, null, 2));
-        console.log('Is GuideLLM:', isGuideLLM);
-        console.log('throughput:', results.throughput);
-        console.log('avg_latency:', results.avg_latency);
-        console.log('tokens_per_second:', results.tokens_per_second);
-        console.log('total_tokens:', results.total_tokens);
-        console.log('p50_latency:', results.p50_latency);
-        console.log('p95_latency:', results.p95_latency);
-        console.log('p99_latency:', results.p99_latency);
-        console.log('success_rate:', results.success_rate);
-        console.log('json_output:', results.json_output ? 'Present' : 'Missing');
-        console.log('==============================');
-
-        if (isGuideLLM) {
-            // GuideLLM: Show raw output, hide metrics
-            this.elements.metricsGrid.style.display = 'none';
-            const rawOutputSection = document.getElementById('guidellm-raw-output-section');
-            const rawOutputTextarea = document.getElementById('guidellm-raw-output');
-            const rawOutputContent = this.elements.guidellmRawOutputContent;
-            const toggleBtn = this.elements.toggleRawOutputBtn;
-            const jsonOutputSection = document.getElementById('guidellm-json-output-section');
-            const jsonOutputPre = document.getElementById('guidellm-json-output');
-            
-            if (rawOutputSection && rawOutputTextarea) {
-                rawOutputTextarea.value = results.raw_output;
-                rawOutputSection.style.display = 'block';
-                // Reset to visible state when new results come in
-                if (rawOutputContent) {
-                    rawOutputContent.style.display = 'block';
-                }
-                if (toggleBtn) {
-                    toggleBtn.textContent = 'Hide';
-                }
-            }
-            
-            // Try to extract and display JSON from results
-            if (results.json_output) {
-                try {
-                    // Parse and format JSON
-                    const jsonData = typeof results.json_output === 'string' 
-                        ? JSON.parse(results.json_output) 
-                        : results.json_output;
-                    
-                    if (jsonOutputSection && jsonOutputPre) {
-                        jsonOutputPre.textContent = JSON.stringify(jsonData, null, 2);
-                        jsonOutputSection.style.display = 'block';
-                        
-                        // Reset to visible state when new results come in
-                        const jsonOutputContent = this.elements.guidellmJsonOutputContent;
-                        const toggleJsonBtn = this.elements.toggleJsonOutputBtn;
-                        if (jsonOutputContent) {
-                            jsonOutputContent.style.display = 'block';
-                        }
-                        if (toggleJsonBtn) {
-                            toggleJsonBtn.textContent = 'Hide';
-                        }
-                    }
-                    
-                    // Also create table view
-                    console.log('[BENCHMARK] Creating table view from JSON data');
-                    this.displayBenchmarkTable(jsonData);
-                } catch (e) {
-                    console.warn('Failed to parse GuideLLM JSON output:', e);
-                    if (jsonOutputSection) {
-                        jsonOutputSection.style.display = 'none';
-                    }
-                }
-            } else {
-                console.warn('[BENCHMARK] No json_output in results');
-                if (jsonOutputSection) {
-                    jsonOutputSection.style.display = 'none';
-                }
-            }
-        } else {
-            // Built-in: Show metrics, hide raw output
-            this.elements.metricsGrid.style.display = 'grid';
-            const rawOutputSection = document.getElementById('guidellm-raw-output-section');
-            const jsonOutputSection = document.getElementById('guidellm-json-output-section');
-            const tableSection = document.getElementById('guidellm-table-section');
-            if (rawOutputSection) {
-                rawOutputSection.style.display = 'none';
-            }
-            if (jsonOutputSection) {
-                jsonOutputSection.style.display = 'none';
-            }
-            if (tableSection) {
-                tableSection.style.display = 'none';
-            }
-
-            // Update metric cards with defensive checks
-            document.getElementById('metric-throughput').textContent = 
-                results.throughput !== undefined ? `${results.throughput.toFixed(2)} req/s` : '-- req/s';
-            document.getElementById('metric-latency').textContent = 
-                results.avg_latency !== undefined ? `${results.avg_latency.toFixed(2)} ms` : '-- ms';
-            document.getElementById('benchmark-tokens-per-sec').textContent = 
-                results.tokens_per_second !== undefined ? `${results.tokens_per_second.toFixed(2)} tok/s` : '-- tok/s';
-            document.getElementById('metric-p50').textContent = 
-                results.p50_latency !== undefined ? `${results.p50_latency.toFixed(2)} ms` : '-- ms';
-            document.getElementById('metric-p95').textContent = 
-                results.p95_latency !== undefined ? `${results.p95_latency.toFixed(2)} ms` : '-- ms';
-            document.getElementById('metric-p99').textContent = 
-                results.p99_latency !== undefined ? `${results.p99_latency.toFixed(2)} ms` : '-- ms';
-            document.getElementById('benchmark-total-tokens').textContent = 
-                results.total_tokens !== undefined ? results.total_tokens.toLocaleString() : '--';
-            document.getElementById('metric-success-rate').textContent = 
-                results.success_rate !== undefined ? `${results.success_rate.toFixed(1)} %` : '-- %';
-
-            // Animate cards
-            document.querySelectorAll('.metric-card').forEach((card, index) => {
-                setTimeout(() => {
-                    card.classList.add('updated');
-                    setTimeout(() => card.classList.remove('updated'), 500);
-                }, index * 50);
-            });
-        }
-    }
-
-    displayBenchmarkTable(jsonData) {
-        console.log('[TABLE] displayBenchmarkTable called with data:', jsonData);
-        
-        const tableSection = document.getElementById('guidellm-table-section');
-        const tableContent = document.getElementById('guidellm-table-content');
-        
-        console.log('[TABLE] Table section element:', tableSection);
-        console.log('[TABLE] Table content element:', tableContent);
-        
-        if (!tableSection || !tableContent) {
-            console.error('[TABLE] Table section or content element not found');
-            return;
-        }
-        
-        if (!jsonData || !jsonData.benchmarks || jsonData.benchmarks.length === 0) {
-            console.warn('[TABLE] No benchmark data in JSON');
-            return;
-        }
-        
-        const benchmark = jsonData.benchmarks[0]; // Get first benchmark
-        console.log('[TABLE] Processing benchmark:', benchmark);
-        
-        let html = '';
-        
-        // Configuration Table
-        html += '<div class="benchmark-table-group">';
-        html += '<h4>⚙️ Configuration</h4>';
-        html += '<table class="benchmark-data-table">';
-        html += '<tbody>';
-        
-        if (benchmark.worker) {
-            html += `<tr><td class="label">Backend Target</td><td class="value">${benchmark.worker.backend_target || 'N/A'}</td></tr>`;
-            html += `<tr><td class="label">Model</td><td class="value">${benchmark.worker.backend_model || 'N/A'}</td></tr>`;
-        }
-        
-        if (benchmark.request_loader) {
-            html += `<tr><td class="label">Data Configuration</td><td class="value">${benchmark.request_loader.data || 'N/A'}</td></tr>`;
-        }
-        
-        if (benchmark.args && benchmark.args.strategy) {
-            html += `<tr><td class="label">Strategy Type</td><td class="value">${benchmark.args.strategy.type_ || 'N/A'}</td></tr>`;
-            html += `<tr><td class="label">Request Rate</td><td class="value">${benchmark.args.strategy.rate || 'N/A'} req/s</td></tr>`;
-        }
-        
-        if (benchmark.args) {
-            html += `<tr><td class="label">Max Requests</td><td class="value">${benchmark.args.max_number || 'N/A'}</td></tr>`;
-        }
-        
-        html += '</tbody></table></div>';
-        
-        // Request Statistics Table
-        if (benchmark.run_stats) {
-            const stats = benchmark.run_stats;
-            const duration = stats.end_time - stats.start_time;
-            
-            html += '<div class="benchmark-table-group">';
-            html += '<h4>📊 Request Statistics</h4>';
-            html += '<table class="benchmark-data-table">';
-            html += '<tbody>';
-            
-            if (stats.requests_made) {
-                html += `<tr><td class="label">Total Requests</td><td class="value">${stats.requests_made.total || 0}</td></tr>`;
-                html += `<tr><td class="label">Successful</td><td class="value success">${stats.requests_made.successful || 0}</td></tr>`;
-                html += `<tr><td class="label">Errored</td><td class="value ${stats.requests_made.errored > 0 ? 'error' : ''}">${stats.requests_made.errored || 0}</td></tr>`;
-                html += `<tr><td class="label">Incomplete</td><td class="value">${stats.requests_made.incomplete || 0}</td></tr>`;
-            }
-            
-            html += `<tr><td class="label">Duration</td><td class="value">${duration.toFixed(2)} seconds</td></tr>`;
-            html += `<tr><td class="label">Avg Request Time</td><td class="value">${(stats.request_time_avg || 0).toFixed(3)} seconds</td></tr>`;
-            html += `<tr><td class="label">Avg Worker Time</td><td class="value">${(stats.worker_time_avg || 0).toFixed(3)} seconds</td></tr>`;
-            html += `<tr><td class="label">Avg Queued Time</td><td class="value">${((stats.queued_time_avg || 0) * 1000).toFixed(2)} ms</td></tr>`;
-            
-            html += '</tbody></table></div>';
-        }
-        
-        // Performance Metrics Table
-        if (benchmark.metrics) {
-            html += '<div class="benchmark-table-group">';
-            html += '<h4>🚀 Performance Metrics</h4>';
-            html += '<table class="benchmark-data-table">';
-            html += '<thead><tr><th>Metric</th><th>Mean</th><th>Median</th><th>Min</th><th>Max</th><th>Std Dev</th></tr></thead>';
-            html += '<tbody>';
-            
-            // Requests per second
-            if (benchmark.metrics.requests_per_second && benchmark.metrics.requests_per_second.successful) {
-                const rps = benchmark.metrics.requests_per_second.successful;
-                html += '<tr>';
-                html += '<td class="label">Requests/Second</td>';
-                html += `<td>${(rps.mean || 0).toFixed(2)}</td>`;
-                html += `<td>${(rps.median || 0).toFixed(2)}</td>`;
-                html += `<td>${(rps.min || 0).toFixed(2)}</td>`;
-                html += `<td>${(rps.max || 0).toFixed(2)}</td>`;
-                html += `<td>${(rps.std_dev || 0).toFixed(2)}</td>`;
-                html += '</tr>';
-            }
-            
-            // Time to first token
-            if (benchmark.metrics.time_to_first_token && benchmark.metrics.time_to_first_token.successful) {
-                const ttft = benchmark.metrics.time_to_first_token.successful;
-                html += '<tr>';
-                html += '<td class="label">Time to First Token (s)</td>';
-                html += `<td>${(ttft.mean || 0).toFixed(3)}</td>`;
-                html += `<td>${(ttft.median || 0).toFixed(3)}</td>`;
-                html += `<td>${(ttft.min || 0).toFixed(3)}</td>`;
-                html += `<td>${(ttft.max || 0).toFixed(3)}</td>`;
-                html += `<td>${(ttft.std_dev || 0).toFixed(3)}</td>`;
-                html += '</tr>';
-            }
-            
-            // Inter token latency
-            if (benchmark.metrics.inter_token_latency && benchmark.metrics.inter_token_latency.successful) {
-                const itl = benchmark.metrics.inter_token_latency.successful;
-                html += '<tr>';
-                html += '<td class="label">Inter-Token Latency (ms)</td>';
-                html += `<td>${((itl.mean || 0) * 1000).toFixed(2)}</td>`;
-                html += `<td>${((itl.median || 0) * 1000).toFixed(2)}</td>`;
-                html += `<td>${((itl.min || 0) * 1000).toFixed(2)}</td>`;
-                html += `<td>${((itl.max || 0) * 1000).toFixed(2)}</td>`;
-                html += `<td>${((itl.std_dev || 0) * 1000).toFixed(2)}</td>`;
-                html += '</tr>';
-            }
-            
-            html += '</tbody></table></div>';
-        }
-        
-        // Token Statistics Table
-        if (benchmark.metrics) {
-            html += '<div class="benchmark-table-group">';
-            html += '<h4>📝 Token Statistics</h4>';
-            html += '<table class="benchmark-data-table">';
-            html += '<tbody>';
-            
-            // Output tokens per second
-            if (benchmark.metrics.output_tokens_per_second && benchmark.metrics.output_tokens_per_second.successful) {
-                const otps = benchmark.metrics.output_tokens_per_second.successful;
-                html += `<tr><td class="label">Output Tokens/Second (Mean)</td><td class="value">${(otps.mean || 0).toFixed(2)}</td></tr>`;
-                html += `<tr><td class="label">Output Tokens/Second (Median)</td><td class="value">${(otps.median || 0).toFixed(2)}</td></tr>`;
-            }
-            
-            // Total tokens per second
-            if (benchmark.metrics.total_tokens_per_second && benchmark.metrics.total_tokens_per_second.successful) {
-                const ttps = benchmark.metrics.total_tokens_per_second.successful;
-                html += `<tr><td class="label">Total Tokens/Second (Mean)</td><td class="value">${(ttps.mean || 0).toFixed(2)}</td></tr>`;
-                html += `<tr><td class="label">Total Tokens/Second (Median)</td><td class="value">${(ttps.median || 0).toFixed(2)}</td></tr>`;
-            }
-            
-            // Request output token counts
-            if (benchmark.metrics.request_output_token_count && benchmark.metrics.request_output_token_count.successful) {
-                const rotc = benchmark.metrics.request_output_token_count.successful;
-                html += `<tr><td class="label">Request Output Tokens (Mean)</td><td class="value">${(rotc.mean || 0).toFixed(0)}</td></tr>`;
-                html += `<tr><td class="label">Request Output Tokens (Total)</td><td class="value">${(rotc.total_sum || 0).toFixed(0)}</td></tr>`;
-            }
-            
-            html += '</tbody></table></div>';
-        }
-        
-        // Latency Percentiles Table
-        if (benchmark.metrics && benchmark.metrics.request_latency && benchmark.metrics.request_latency.successful) {
-            const latency = benchmark.metrics.request_latency.successful;
-            if (latency.percentiles) {
-                html += '<div class="benchmark-table-group">';
-                html += '<h4>📈 Request Latency Percentiles</h4>';
-                html += '<table class="benchmark-data-table">';
-                html += '<thead><tr><th>Percentile</th><th>Latency (seconds)</th><th>Latency (ms)</th></tr></thead>';
-                html += '<tbody>';
-                
-                const percentiles = [
-                    { name: 'P50 (Median)', key: 'p50' },
-                    { name: 'P75', key: 'p75' },
-                    { name: 'P90', key: 'p90' },
-                    { name: 'P95', key: 'p95' },
-                    { name: 'P99', key: 'p99' },
-                    { name: 'P99.9', key: 'p999' }
-                ];
-                
-                percentiles.forEach(p => {
-                    if (latency.percentiles[p.key] !== undefined) {
-                        const val = latency.percentiles[p.key];
-                        html += `<tr><td class="label">${p.name}</td><td>${val.toFixed(3)}</td><td>${(val * 1000).toFixed(2)}</td></tr>`;
-                    }
-                });
-                
-                html += '</tbody></table></div>';
-            }
-        }
-        
-        tableContent.innerHTML = html;
-        tableSection.style.display = 'block';
-        console.log('[TABLE] Table displayed successfully');
-    }
-
-    resetBenchmarkUI() {
-        this.benchmarkRunning = false;
-        this.elements.runBenchmarkBtn.disabled = !this.serverRunning;
-        this.elements.runBenchmarkBtn.style.display = 'inline-block';
-        this.elements.stopBenchmarkBtn.disabled = true;
-        this.elements.stopBenchmarkBtn.style.display = 'none';
-        this.elements.progressFill.style.width = '0%';
-        this.elements.progressPercent.textContent = '0%';
-        
-        if (this.benchmarkPollInterval) {
-            clearInterval(this.benchmarkPollInterval);
-            this.benchmarkPollInterval = null;
-        }
-    }
+    // NOTE: Benchmark methods (runBenchmark, stopBenchmark, pollBenchmarkStatus, 
+    // displayBenchmarkResults, displayBenchmarkTable, resetBenchmarkUI) are 
+    // injected by GuideLLM module (modules/guidellm.js)
 
     // ============ Template Settings ============
     toggleTemplateSettings() {
@@ -3981,125 +3779,7 @@ number ::= [0-9]+`
         }
     }
     
-    // ============ Benchmark Command Preview ============
-    
-    updateBenchmarkCommandPreview() {
-        const totalRequests = this.elements.benchmarkRequests.value || '100';
-        const requestRate = this.elements.benchmarkRate.value || '5';
-        const promptTokens = this.elements.benchmarkPromptTokens.value || '100';
-        const outputTokens = this.elements.benchmarkOutputTokens.value || '100';
-        const useGuideLLM = this.elements.benchmarkMethodGuidellm.checked;
-        
-        // Get server configuration
-        const host = this.elements.host?.value || 'localhost';
-        const port = this.elements.port?.value || '8000';
-        const targetUrl = `http://${host}:${port}/v1`;
-        
-        let cmd = '';
-        
-        if (useGuideLLM) {
-            // Build GuideLLM command matching the actual command used in app.py
-            cmd = '# Benchmark using GuideLLM\n';
-            cmd += '# Actual command used by the app:\n';
-            cmd += 'guidellm benchmark';
-            cmd += ` \\\n  --target "${targetUrl}"`;
-            
-            // Add rate configuration
-            if (requestRate && requestRate > 0) {
-                cmd += ` \\\n  --rate-type constant`;
-                cmd += ` \\\n  --rate ${requestRate}`;
-            } else {
-                cmd += ` \\\n  --rate-type sweep`;
-            }
-            
-            // Add request limit
-            cmd += ` \\\n  --max-requests ${totalRequests}`;
-            
-            // Add token configuration in guidellm's data format
-            cmd += ` \\\n  --data "prompt_tokens=${promptTokens},output_tokens=${outputTokens}"`;
-        } else {
-            // Built-in benchmark - show Python API equivalent
-            cmd = '# Built-in benchmark (running in the app)\n';
-            cmd += '# Equivalent Python code:\n';
-            cmd += 'import asyncio\n';
-            cmd += 'import aiohttp\n\n';
-            cmd += 'async def benchmark():\n';
-            cmd += '    config = {\n';
-            cmd += `        "total_requests": ${totalRequests},\n`;
-            cmd += `        "request_rate": ${requestRate},\n`;
-            cmd += `        "prompt_tokens": ${promptTokens},\n`;
-            cmd += `        "output_tokens": ${outputTokens}\n`;
-            cmd += '    }\n';
-            cmd += `    url = "${targetUrl}/chat/completions"\n`;
-            cmd += '    # Send requests at specified rate...\n';
-            cmd += '    # Calculate throughput, latency, tokens/sec...\n\n';
-            cmd += '# The built-in benchmark is faster and simpler\n';
-            cmd += '# Use GuideLLM for advanced features & reports';
-        }
-        
-        this.elements.benchmarkCommandText.value = cmd;
-    }
-    
-    async copyBenchmarkCommand() {
-        const command = this.elements.benchmarkCommandText.value;
-        try {
-            await navigator.clipboard.writeText(command);
-            this.showNotification('Benchmark command copied to clipboard!', 'success');
-        } catch (error) {
-            console.error('Failed to copy:', error);
-            this.showNotification('Failed to copy command', 'error');
-        }
-    }
-
-    async copyGuidellmOutput() {
-        const output = this.elements.guidellmRawOutput.value;
-        try {
-            await navigator.clipboard.writeText(output);
-            this.showNotification('GuideLLM output copied to clipboard!', 'success');
-        } catch (error) {
-            console.error('Failed to copy:', error);
-            this.showNotification('Failed to copy output', 'error');
-        }
-    }
-
-    toggleRawOutput() {
-        const content = this.elements.guidellmRawOutputContent;
-        const btn = this.elements.toggleRawOutputBtn;
-        
-        if (content.style.display === 'none') {
-            content.style.display = 'block';
-            btn.textContent = 'Hide';
-        } else {
-            content.style.display = 'none';
-            btn.textContent = 'Show';
-        }
-    }
-
-    toggleJsonOutput() {
-        const content = this.elements.guidellmJsonOutputContent;
-        const btn = this.elements.toggleJsonOutputBtn;
-        
-        if (content.style.display === 'none') {
-            content.style.display = 'block';
-            btn.textContent = 'Hide';
-        } else {
-            content.style.display = 'none';
-            btn.textContent = 'Show';
-        }
-    }
-
-    async copyGuidellmJson() {
-        const jsonOutput = document.getElementById('guidellm-json-output');
-        if (jsonOutput) {
-            try {
-                await navigator.clipboard.writeText(jsonOutput.textContent);
-                this.showNotification('GuideLLM JSON copied to clipboard!', 'success');
-            } catch (error) {
-                console.error('Failed to copy:', error);
-                this.showNotification('Failed to copy JSON', 'error');
-            }
-        }
-    }
+    // NOTE: Benchmark command preview and copy methods are injected by GuideLLM module
     
     // ===============================================
     // COMMUNITY RECIPES
@@ -4857,7 +4537,14 @@ number ::= [0-9]+`
             return;
         }
         
-        const confirmed = confirm(`Are you sure you want to delete "${this.editingRecipe.name}"?`);
+        const confirmed = await this.showConfirm({
+            title: 'Delete Recipe',
+            message: `Are you sure you want to delete "${this.editingRecipe.name}"? This action cannot be undone.`,
+            confirmText: 'Delete',
+            cancelText: 'Cancel',
+            icon: '🗑️',
+            type: 'danger'
+        });
         if (!confirmed) return;
         
         try {
@@ -5192,10 +4879,19 @@ number ::= [0-9]+`
         }
     }
     
-    clearAllTools() {
+    async clearAllTools() {
         if (this.tools.length === 0) return;
         
-        if (confirm('Remove all tools?')) {
+        const confirmed = await this.showConfirm({
+            title: 'Clear All Tools',
+            message: `Remove all ${this.tools.length} tool(s)? This action cannot be undone.`,
+            confirmText: 'Clear All',
+            cancelText: 'Cancel',
+            icon: '🗑️',
+            type: 'danger'
+        });
+        
+        if (confirmed) {
             this.tools = [];
             this.renderToolsList();
             this.updateToolsCountBadge();
@@ -5299,11 +4995,13 @@ number ::= [0-9]+`
     }
     
     getToolsForRequest() {
-        // Return tools array for API request, or null if empty/disabled
+        // Return CUSTOM tools array for API request, or null if empty/disabled
+        // MCP tools are handled separately via getMCPToolsForRequest()
+        // This method is for the Tool Calling panel only
         const toolChoice = this.elements.toolChoice?.value || '';
         
         // Debug logging
-        console.log('=== getToolsForRequest DEBUG ===');
+        console.log('=== getToolsForRequest (Custom Tools) ===');
         console.log('toolChoice dropdown value:', JSON.stringify(toolChoice));
         console.log('this.tools.length:', this.tools.length);
         console.log('this.tools:', JSON.stringify(this.tools.map(t => t.function?.name)));
@@ -5331,8 +5029,32 @@ number ::= [0-9]+`
         return result;
     }
     
+    /**
+     * Detect if text contains malformed tool call patterns
+     * This catches cases where vLLM's tool parser failed but still returned content
+     */
+    detectMalformedToolCall(text) {
+        if (!text) return false;
+        
+        // Common patterns that indicate a failed tool call parse:
+        // 1. Hermes format: <tool_call>...</tool_call>
+        // 2. Raw JSON with function name/arguments
+        // 3. Truncated JSON (ends with incomplete structure)
+        const patterns = [
+            /<tool_call>/i,                          // Hermes XML-style tool call tag
+            /<\/tool_call>/i,                        // Closing tool call tag
+            /\{"name"\s*:\s*"[^"]+"/,                // JSON with "name" field
+            /\{"function"\s*:\s*\{/,                 // JSON with function object
+            /"arguments"\s*:\s*\{[^}]*$/,            // Truncated arguments JSON
+            /\{\s*"type"\s*:\s*"function"/,          // Function type declaration
+            /<function=/i,                           // Alternative function tag format
+        ];
+        
+        return patterns.some(pattern => pattern.test(text));
+    }
+    
     formatToolCallMessage(toolCalls) {
-        // Format tool calls for display in chat
+        // Format tool calls for display in chat (custom tools - no execution)
         if (!toolCalls || toolCalls.length === 0) return '';
         
         return `
@@ -5347,7 +5069,7 @@ number ::= [0-9]+`
                     return `
                         <div class="tool-call-content">
                             <div class="tool-call-header">
-                                <span class="tool-icon">🔧</span>
+                                <span class="tool-icon"><span class="icon-mcp-tools"></span></span>
                                 <span>${this.escapeHtml(func.name || 'unknown')}</span>
                             </div>
                             <div class="tool-call-args">${this.escapeHtml(argsDisplay)}</div>
@@ -5358,12 +5080,419 @@ number ::= [0-9]+`
         `;
     }
     
+    formatMCPToolCallMessage(toolCalls) {
+        // Format MCP tool calls with individual Execute/Skip buttons for each tool
+        if (!toolCalls || toolCalls.length === 0) return '';
+        
+        // Store pending MCP tool calls for execution
+        this._pendingMCPToolCalls = [...toolCalls];
+        this._mcpToolResults = [];
+        this._mcpToolsProcessed = 0;
+        
+        return `
+            <div class="mcp-tool-calls-container">
+                <div class="mcp-tool-calls-header">
+                    <span class="mcp-icon">🔗</span>
+                    <span>MCP Tool Call${toolCalls.length > 1 ? 's' : ''} - Review Each Tool</span>
+                </div>
+                ${toolCalls.map((tc, index) => {
+                    const func = tc.function || {};
+                    let argsDisplay = func.arguments || '{}';
+                    try {
+                        argsDisplay = JSON.stringify(JSON.parse(func.arguments), null, 2);
+                    } catch (e) {}
+                    
+                    return `
+                        <div class="mcp-tool-call-item" data-tool-index="${index}" data-tool-id="${tc.id}">
+                            <div class="mcp-tool-call-header">
+                                <span class="tool-name">${this.escapeHtml(func.name || 'unknown')}</span>
+                                <span class="tool-status pending">Awaiting Decision</span>
+                            </div>
+                            <details class="mcp-tool-args-details" open>
+                                <summary>Arguments</summary>
+                                <pre class="mcp-tool-args">${this.escapeHtml(argsDisplay)}</pre>
+                            </details>
+                            <div class="mcp-tool-actions-individual">
+                                <button class="btn btn-success btn-sm" onclick="window.vllmUI.executeSingleMCPTool(${index})">
+                                    Execute
+                                </button>
+                                <button class="btn btn-secondary btn-sm" onclick="window.vllmUI.skipSingleMCPTool(${index})">
+                                    Skip
+                                </button>
+                            </div>
+                            <div class="mcp-tool-result" style="display: none;"></div>
+                        </div>
+                    `;
+                }).join('')}
+                <div class="mcp-tool-continue" style="display: none;">
+                    <button class="btn btn-primary" onclick="window.vllmUI.continueMCPConversation()">
+                        Continue Conversation
+                    </button>
+                    <button class="btn btn-secondary" onclick="window.vllmUI.endMCPConversation()">
+                        Done
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+    
+    async executeSingleMCPTool(index) {
+        if (!this._pendingMCPToolCalls || !this._pendingMCPToolCalls[index]) {
+            this.showNotification('Tool not found', 'warning');
+            return;
+        }
+        
+        const tc = this._pendingMCPToolCalls[index];
+        const func = tc.function || {};
+        const toolName = func.name;
+        // Get the LAST (most recent) tool calls container to avoid targeting old ones
+        const containers = document.querySelectorAll('.mcp-tool-calls-container');
+        const container = containers[containers.length - 1];
+        const itemEl = container?.querySelector(`[data-tool-index="${index}"]`);
+        const statusEl = itemEl?.querySelector('.tool-status');
+        const resultEl = itemEl?.querySelector('.mcp-tool-result');
+        const actionsEl = itemEl?.querySelector('.mcp-tool-actions-individual');
+        
+        // Validate tool exists in MCP tools (check ALL tools, not just enabled ones)
+        const allMcpTools = this.mcpTools || [];
+        const toolExists = allMcpTools.some(t => t.function?.name === toolName);
+        
+        if (!toolExists) {
+            // Tool doesn't exist - model hallucinated the tool name
+            if (actionsEl) actionsEl.style.display = 'none';
+            if (statusEl) {
+                statusEl.textContent = 'Not Found';
+                statusEl.className = 'tool-status error';
+            }
+            if (resultEl) {
+                resultEl.style.display = 'block';
+                const availableTools = allMcpTools.map(t => t.function?.name).join(', ') || 'none';
+                resultEl.innerHTML = `
+                    <div class="tool-error">
+                        <strong>Tool "${this.escapeHtml(toolName)}" does not exist.</strong><br>
+                        The model hallucinated this tool name.<br><br>
+                        <em>Available tools:</em> ${this.escapeHtml(availableTools)}
+                    </div>
+                `;
+            }
+            
+            // Add error result
+            this._mcpToolResults.push({
+                tool_call_id: tc.id,
+                role: 'tool',
+                content: `Error: Tool "${toolName}" does not exist. Available tools: ${allMcpTools.map(t => t.function?.name).join(', ')}`
+            });
+            
+            this._mcpToolsProcessed++;
+            this.checkMCPToolsComplete();
+            return;
+        }
+        
+        // Hide action buttons for this tool
+        if (actionsEl) actionsEl.style.display = 'none';
+        
+        // Update status to executing
+        if (statusEl) {
+            statusEl.textContent = 'Executing...';
+            statusEl.className = 'tool-status executing';
+        }
+        
+        try {
+            // Parse arguments
+            let args = {};
+            try {
+                args = JSON.parse(func.arguments || '{}');
+            } catch (e) {
+                console.error('Failed to parse tool arguments:', e);
+            }
+            
+            console.log(`🔧 Executing MCP tool: ${func.name}`, args);
+            
+            // Call MCP backend
+            const response = await fetch('/api/mcp/call', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    tool_name: func.name,
+                    arguments: args
+                })
+            });
+            
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Tool execution failed');
+            }
+            
+            const result = await response.json();
+            console.log(`✅ Tool result for ${func.name}:`, result);
+            
+            // Update UI
+            if (statusEl) {
+                statusEl.textContent = 'Executed';
+                statusEl.className = 'tool-status success';
+            }
+            if (resultEl) {
+                resultEl.style.display = 'block';
+                resultEl.innerHTML = `<details open><summary>Result</summary><pre>${this.escapeHtml(JSON.stringify(result.result, null, 2))}</pre></details>`;
+            }
+            
+            // Store result for chat continuation
+            this._mcpToolResults.push({
+                tool_call_id: tc.id,
+                role: 'tool',
+                name: toolName,  // Include tool name for proper message format
+                content: typeof result.result === 'string' ? result.result : JSON.stringify(result.result)
+            });
+            
+            console.log('✅ Tool result stored:', { tool_call_id: tc.id, name: toolName });
+            
+        } catch (error) {
+            console.error(`❌ Tool execution failed for ${func.name}:`, error);
+            
+            if (statusEl) {
+                statusEl.textContent = 'Failed';
+                statusEl.className = 'tool-status error';
+            }
+            if (resultEl) {
+                resultEl.style.display = 'block';
+                resultEl.innerHTML = `<div class="tool-error">Error: ${this.escapeHtml(error.message)}</div>`;
+            }
+            
+            // Still add error result so conversation can continue
+            this._mcpToolResults.push({
+                tool_call_id: tc.id,
+                role: 'tool',
+                name: toolName,  // Include tool name for proper message format
+                content: `Error: ${error.message}`
+            });
+        }
+        
+        // Mark this tool as processed
+        this._mcpToolsProcessed++;
+        this.checkMCPToolsComplete();
+    }
+    
+    skipSingleMCPTool(index) {
+        if (!this._pendingMCPToolCalls || !this._pendingMCPToolCalls[index]) {
+            return;
+        }
+        
+        const tc = this._pendingMCPToolCalls[index];
+        const func = tc.function || {};
+        // Get the LAST (most recent) tool calls container to avoid targeting old ones
+        const containers = document.querySelectorAll('.mcp-tool-calls-container');
+        const container = containers[containers.length - 1];
+        const itemEl = container?.querySelector(`[data-tool-index="${index}"]`);
+        const statusEl = itemEl?.querySelector('.tool-status');
+        const actionsEl = itemEl?.querySelector('.mcp-tool-actions-individual');
+        
+        // Hide action buttons for this tool
+        if (actionsEl) actionsEl.style.display = 'none';
+        
+        // Update status
+        if (statusEl) {
+            statusEl.textContent = 'Skipped';
+            statusEl.className = 'tool-status skipped';
+        }
+        this._mcpToolResults.push({
+            tool_call_id: tc.id,
+            role: 'tool',
+            name: func.name,  // Include tool name for proper message format
+            content: 'Tool execution was skipped by user.'
+        });
+        
+        // Mark this tool as processed
+        this._mcpToolsProcessed++;
+        this.checkMCPToolsComplete();
+    }
+    
+    checkMCPToolsComplete() {
+        // Check if all tools have been processed (executed or skipped)
+        if (!this._pendingMCPToolCalls) return;
+        
+        const totalTools = this._pendingMCPToolCalls.length;
+        const processed = this._mcpToolsProcessed || 0;
+        
+        if (processed >= totalTools) {
+            // All tools processed - show continue options
+            // Get the LAST (most recent) tool calls container
+            const containers = document.querySelectorAll('.mcp-tool-calls-container');
+            const container = containers[containers.length - 1];
+            const header = container?.querySelector('.mcp-tool-calls-header span:last-child');
+            const continueDiv = container?.querySelector('.mcp-tool-continue');
+            
+            if (header) header.textContent = `All ${totalTools} tool${totalTools > 1 ? 's' : ''} reviewed`;
+            if (continueDiv) continueDiv.style.display = 'flex';
+            
+            // Clear pending
+            this._pendingMCPToolCalls = null;
+        }
+    }
+    
+    async continueMCPConversation() {
+        // Phase 3: Continue conversation with tool results
+        if (!this._mcpToolResults || this._mcpToolResults.length === 0) {
+            this.showNotification('No tool results to continue with', 'warning');
+            return;
+        }
+        
+        // Add tool results to chat history
+        for (const result of this._mcpToolResults) {
+            this.chatHistory.push(result);
+        }
+        
+        // Clear stored results
+        this._mcpToolResults = null;
+        
+        // Trigger a new message to continue the conversation
+        // We use a special flag to indicate this is a continuation
+        this._mcpContinuation = true;
+        
+        // Re-enable send button and trigger send with empty message
+        this.elements.sendBtn.disabled = false;
+        this.elements.sendBtn.textContent = 'Send';
+        
+        // Send continuation request
+        await this.sendMCPContinuation();
+    }
+    
+    async sendMCPContinuation() {
+        // Send a follow-up request with tool results already in history
+        this.elements.sendBtn.disabled = true;
+        this.elements.sendBtn.textContent = 'Generating...';
+        
+        const assistantMessageDiv = this.addChatMessage('assistant', '▌');
+        const textSpan = assistantMessageDiv.querySelector('.message-text');
+        
+        try {
+            const systemPrompt = this.elements.systemPrompt.value.trim();
+            let messagesToSend = [...this.chatHistory];
+            
+            if (systemPrompt) {
+                messagesToSend = [
+                    {role: 'system', content: systemPrompt},
+                    ...this.chatHistory
+                ];
+            }
+            
+            console.log('📤 Sending MCP continuation with messages:', JSON.stringify(messagesToSend, null, 2));
+            
+            // Don't send tools in continuation - force text response
+            // This prevents the model from calling the same tool again in a loop
+            const requestBody = {
+                messages: messagesToSend,
+                temperature: parseFloat(this.elements.temperature.value),
+                max_tokens: parseInt(this.elements.maxTokens.value),
+                stream: true  // Use streaming since no tools
+            };
+            
+            console.log('📤 Continuation request (no tools, streaming):', requestBody);
+            
+            const response = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(requestBody)
+            });
+            
+            if (!response.ok) {
+                throw new Error(await response.text() || 'Failed to continue conversation');
+            }
+            
+            // Check content type to determine response format
+            const contentType = response.headers.get('content-type') || '';
+            
+            if (contentType.includes('application/json')) {
+                // Non-streaming JSON response
+                const jsonResponse = await response.json();
+                console.log('📤 MCP continuation response:', jsonResponse);
+                
+                if (jsonResponse.choices && jsonResponse.choices.length > 0) {
+                    const message = jsonResponse.choices[0].message;
+                    
+                    // Display text content if present
+                    if (message.content) {
+                        textSpan.textContent = message.content;
+                        this.chatHistory.push({ role: 'assistant', content: message.content });
+                    }
+                    
+                    // If model STILL wants to call tools, show them (but this shouldn't happen)
+                    if (message.tool_calls && message.tool_calls.length > 0) {
+                        console.warn('⚠️ Model still requesting tool calls after continuation');
+                        // Just show the text, ignore the tool calls to prevent infinite loop
+                        if (!message.content) {
+                            textSpan.textContent = 'Model is trying to call tools again. Please rephrase your question.';
+                        }
+                    }
+                } else {
+                    textSpan.textContent = 'No response from model';
+                }
+            } else {
+                // Streaming SSE response
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let fullText = '';
+                
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    const chunk = decoder.decode(value, { stream: true });
+                    const lines = chunk.split('\n');
+                    
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = line.slice(6);
+                            if (data === '[DONE]') continue;
+                            
+                            try {
+                                const parsed = JSON.parse(data);
+                                const content = parsed.choices?.[0]?.delta?.content || '';
+                                if (content) {
+                                    fullText += content;
+                                    textSpan.textContent = fullText;
+                                }
+                            } catch (e) {
+                                // Skip invalid JSON
+                            }
+                        }
+                    }
+                }
+                
+                if (fullText) {
+                    this.chatHistory.push({ role: 'assistant', content: fullText });
+                } else {
+                    textSpan.textContent = 'No response from model';
+                }
+            }
+            
+        } catch (error) {
+            textSpan.textContent = `Error: ${error.message}`;
+            assistantMessageDiv.classList.add('error');
+        } finally {
+            this.elements.sendBtn.disabled = false;
+            this.elements.sendBtn.textContent = 'Send';
+            this._mcpContinuation = false;
+        }
+    }
+    
+    endMCPConversation() {
+        // User chose not to continue after tool execution
+        this._mcpToolResults = null;
+        this.showNotification('Conversation ended', 'info');
+    }
+    
     escapeHtml(text) {
         if (!text) return '';
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
     }
+    
+    // ============================================
+    // MCP Module - Methods injected from modules/mcp.js
+    // ============================================
+    // MCP methods are dynamically added via initMCPModule()
+    // See: static/js/modules/mcp.js
 }
 // Add CSS animations for notifications
 const style = document.createElement('style');

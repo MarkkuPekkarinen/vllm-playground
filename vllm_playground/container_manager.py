@@ -1,6 +1,6 @@
 """
 Container Manager for vLLM Service
-Handles starting/stopping vLLM containers using Podman CLI
+Handles starting/stopping vLLM containers using Podman or Docker CLI
 Uses subprocess for maximum compatibility on macOS
 """
 
@@ -9,11 +9,35 @@ import logging
 import os
 import json
 import platform
+import shutil
 import subprocess
 import time
 from typing import Optional, Dict, Any, AsyncIterator
 
 logger = logging.getLogger(__name__)
+
+
+def detect_container_runtime() -> Optional[str]:
+    """
+    Detect available container runtime.
+    
+    Returns:
+        'podman' if Podman is available
+        'docker' if Docker is available (and Podman is not)
+        None if neither is available
+    """
+    # Check for Podman first (preferred)
+    if shutil.which("podman"):
+        logger.info("Container runtime detected: podman")
+        return "podman"
+    
+    # Fall back to Docker
+    if shutil.which("docker"):
+        logger.info("Container runtime detected: docker")
+        return "docker"
+    
+    logger.warning("No container runtime found (neither podman nor docker available)")
+    return None
 
 
 class VLLMContainerManager:
@@ -865,4 +889,10 @@ class VLLMContainerManager:
 
 
 # Global container manager instance
-container_manager = VLLMContainerManager()
+# Only create if a container runtime is available
+_detected_runtime = detect_container_runtime()
+if _detected_runtime:
+    container_manager = VLLMContainerManager(container_runtime=_detected_runtime)
+else:
+    container_manager = None
+    logger.warning("Container manager disabled - no container runtime available")

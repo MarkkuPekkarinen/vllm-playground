@@ -6,6 +6,8 @@
     <title>vLLM-Playground - Server Management & Chat Interface</title>
     <link rel="icon" type="image/png" href="/assets/vllm_only.png">
     <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/mcp.css">
+    <link rel="stylesheet" href="/static/css/guidellm.css">
 </head>
 <body>
     <div class="app-layout">
@@ -25,12 +27,18 @@
                     <img src="/assets/guidellm-logo.svg" alt="" class="nav-item-logo" onerror="this.style.display='none'">
                     <span class="nav-label">GuideLLM</span>
                 </button>
+                <button class="nav-item" data-view="mcp-config" title="MCP Servers" id="nav-mcp">
+                    <span class="nav-item-icon icon-mcp-nav"></span>
+                    <span class="nav-label">MCP Servers</span>
+                    <span class="nav-badge" id="mcp-servers-badge" style="display: none;">0</span>
+                </button>
             </div>
             
             <div class="nav-footer">
                 <div class="nav-status">
                     <span id="nav-status-dot" class="status-dot"></span>
                     <span id="nav-status-text" class="nav-status-text">Offline</span>
+                    <span id="nav-version" class="nav-version"></span>
                 </div>
                 <button class="nav-collapse-btn" id="nav-collapse-btn" title="Collapse sidebar">
                     <span class="collapse-icon">◀</span>
@@ -50,6 +58,10 @@
                         <h1 id="view-title"><img src="/assets/vllm-logo.svg" alt="vLLM" class="view-title-logo"> vLLM Server</h1>
                     </div>
                     <div class="header-right">
+                        <div id="container-runtime-status" class="header-feature-status" title="Container Runtime">
+                            <span class="feature-status-dot"></span>
+                            <span class="feature-status-text">Checking...</span>
+                        </div>
                         <div class="status-indicator">
                             <span id="status-dot" class="status-dot"></span>
                             <span id="status-text">Disconnected</span>
@@ -168,16 +180,16 @@
                             <div class="form-group mode-toggle-group">
                                 <label>Run Mode</label>
                                 <div class="mode-toggle-buttons">
-                                    <label class="mode-button active" id="run-mode-subprocess-label">
-                                        <input type="radio" name="run-mode" id="run-mode-subprocess" value="subprocess" checked>
+                                    <label class="mode-button" id="run-mode-subprocess-label">
+                                        <input type="radio" name="run-mode" id="run-mode-subprocess" value="subprocess">
                                         <span>⚡ Subprocess</span>
                                     </label>
-                                    <label class="mode-button" id="run-mode-container-label">
-                                        <input type="radio" name="run-mode" id="run-mode-container" value="container">
+                                    <label class="mode-button active" id="run-mode-container-label">
+                                        <input type="radio" name="run-mode" id="run-mode-container" value="container" checked>
                                         <span>📦 Container</span>
                                     </label>
                                 </div>
-                                <small class="form-help" id="run-mode-help-text">Subprocess: Direct (local dev), Container: Isolated (production)</small>
+                                <small class="form-help" id="run-mode-help-text">Container: Isolated (recommended), Subprocess: Direct (requires vLLM installed)</small>
                             </div>
 
                             <!-- CPU/GPU Mode Toggle -->
@@ -365,7 +377,7 @@
                             <div id="chat-container" class="chat-container">
                                 <div class="chat-message system">
                                     <div class="message-content">
-                                        <span class="message-text">Start the vLLM server and begin chatting with your model.</span>
+                                        <span class="message-text">Welcome! Try different options in the toolbar to customize your chat experience.</span>
                                     </div>
                                 </div>
                             </div>
@@ -558,15 +570,66 @@
                                     <!-- MCP Panel -->
                                     <div class="inline-panel" id="panel-mcp" style="display: none;">
                                         <div class="inline-panel-header">
-                                            <span class="inline-panel-title"><span class="panel-icon icon-mcp"></span> MCP Servers</span>
-                                            <a href="https://modelcontextprotocol.io/" target="_blank" class="panel-doc-link" title="Open MCP Docs">📖 Docs</a>
-                                            <span class="coming-soon-badge">Coming Soon</span>
-                                            <button class="inline-panel-close" data-panel="mcp">✕</button>
+                                            <span class="inline-panel-title"><span class="panel-icon icon-mcp"></span> MCP</span>
+                                            <div class="mcp-enable-toggle">
+                                                <span class="toggle-label">Enable</span>
+                                                <label class="toggle-switch">
+                                                    <input type="checkbox" id="mcp-chat-enabled" disabled>
+                                                    <span class="toggle-slider"></span>
+                                                </label>
+                                            </div>
+                                            <button class="inline-panel-close" data-panel="mcp"><span class="icon-mcp-close"></span></button>
                                         </div>
                                         <div class="inline-panel-content">
-                                            <div class="mcp-placeholder">
-                                                <p>MCP integration is under development.</p>
-                                                <a href="https://modelcontextprotocol.io/" target="_blank">Learn more about MCP</a>
+                                            <!-- MCP Not Available Message -->
+                                            <div class="mcp-chat-unavailable" id="mcp-chat-unavailable">
+                                                <div class="unavailable-icon"><span class="icon-mcp-warning icon-xl"></span></div>
+                                                <p>MCP not installed</p>
+                                                <code>pip install vllm-playground[mcp]</code>
+                                                <a href="#" id="mcp-chat-goto-config" class="link-btn">Configure MCP →</a>
+                                            </div>
+                                            
+                                            <!-- MCP Disabled View -->
+                                            <div class="mcp-chat-disabled" id="mcp-chat-disabled" style="display: none;">
+                                                <p>Enable MCP to use tools from configured servers</p>
+                                                <a href="#" id="mcp-chat-goto-config-2" class="link-btn">Configure MCP Servers →</a>
+                                            </div>
+                                            
+                                            <!-- MCP Enabled View -->
+                                            <div class="mcp-chat-enabled" id="mcp-chat-enabled-view" style="display: none;">
+                                                <!-- Info Tips -->
+                                                <div class="mcp-info-tip">
+                                                    <span class="info-icon">💡</span>
+                                                    <span>Start vLLM with Tool Calling enabled. Set Max Model Length to 8192+. Use a larger model with tool calling capability (e.g., Qwen 2.5 7B+, Llama 3.1 8B+) for better results.</span>
+                                                </div>
+                                                
+                                                <!-- No Servers Configured -->
+                                                <div class="mcp-no-servers" id="mcp-chat-no-servers" style="display: none;">
+                                                    <p>No MCP servers configured</p>
+                                                    <a href="#" id="mcp-chat-goto-config-3" class="link-btn">Add MCP Server →</a>
+                                                </div>
+                                                
+                                                <!-- Server Selection -->
+                                                <div class="mcp-server-selection" id="mcp-chat-server-selection">
+                                                    <div class="selection-header">
+                                                        <span>Select servers to use:</span>
+                                                        <div class="selection-actions">
+                                                            <button class="btn-link" id="mcp-select-all">All</button>
+                                                            <button class="btn-link" id="mcp-select-none">None</button>
+                                                        </div>
+                                                    </div>
+                                                    <div class="server-checkboxes" id="mcp-chat-server-checkboxes">
+                                                        <!-- Dynamically populated by JavaScript -->
+                                                    </div>
+                                                </div>
+                                                
+                                                <!-- Tools Summary -->
+                                                <div class="mcp-tools-summary" id="mcp-chat-tools-summary">
+                                                    <span class="tools-icon"><span class="icon-mcp-tools"></span></span>
+                                                    <span id="mcp-active-tools-count">0 tools</span>
+                                                    <span>from</span>
+                                                    <span id="mcp-active-servers-count">0 servers</span>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -784,10 +847,26 @@
                     <div class="panel guidellm-panel">
                         <div class="panel-header">
                             <h2><img src="/assets/guidellm-logo-light.png" alt="GuideLLM" class="panel-header-logo"> Performance Benchmarking</h2>
-                            <div class="metrics-controls">
+                            <div class="guidellm-status-indicator" id="guidellm-status">
+                                <span>Checking...</span>
+                            </div>
+                            <div class="metrics-controls" id="benchmark-controls">
                                 <button id="run-benchmark-btn" class="btn btn-primary btn-sm" disabled>Run Benchmark</button>
                                 <button id="stop-benchmark-btn" class="btn btn-danger btn-sm" disabled style="display: none;">Stop</button>
                             </div>
+                        </div>
+
+                        <!-- GuideLLM Not Installed Warning -->
+                        <div class="guidellm-install-warning" id="guidellm-install-warning" style="display: none;">
+                            <div class="warning-icon"><span class="icon-guidellm-warning icon-lg"></span></div>
+                            <h3>GuideLLM Not Installed</h3>
+                            <p>Install GuideLLM to enable advanced benchmarking features:</p>
+                            <div class="install-commands">
+                                <code class="primary-cmd">pip install "vllm-playground[benchmark]"</code>
+                                <span class="cmd-divider">or</span>
+                                <code class="alt-cmd">pip install guidellm</code>
+                            </div>
+                            <p class="feature-note">Built-in benchmarking is still available without GuideLLM.</p>
                         </div>
 
                         <div id="metrics-section-content">
@@ -979,6 +1058,206 @@
                     </div>
                 </div>
             </div>
+
+            <!-- MCP Configuration View -->
+            <div class="view-content" id="mcp-config-view" style="display: none;">
+                <div class="mcp-config-layout">
+                    <div class="mcp-config-container">
+                        <!-- Header -->
+                        <div class="mcp-config-header">
+                            <div class="mcp-header-title">
+                                <span class="mcp-header-icon icon-mcp-large"></span>
+                                <div>
+                                    <h2>MCP Server Configuration</h2>
+                                    <p class="mcp-header-subtitle">Configure Model Context Protocol servers to extend LLM capabilities with external tools</p>
+                                </div>
+                            </div>
+                            <div class="mcp-header-status" id="mcp-availability-status">
+                                <span class="status-checking">Checking MCP availability...</span>
+                            </div>
+                        </div>
+
+                        <!-- MCP Not Installed Warning -->
+                        <div class="mcp-install-warning" id="mcp-install-warning" style="display: none;">
+                            <div class="warning-icon"><span class="icon-mcp-warning icon-lg"></span></div>
+                            <h3>MCP Not Installed</h3>
+                            <p>Install the MCP package to enable this feature:</p>
+                            <div class="install-commands">
+                                <code class="primary-cmd">pip install vllm-playground[mcp]</code>
+                                <span class="cmd-divider">or</span>
+                                <code class="alt-cmd">pip install mcp</code>
+                            </div>
+                        </div>
+
+                        <!-- MCP Available Content -->
+                        <div class="mcp-content-wrapper" id="mcp-content-wrapper">
+                            <!-- Server List Section -->
+                            <div class="mcp-section">
+                                <div class="mcp-section-header">
+                                    <h3>Configured Servers</h3>
+                                    <button class="btn btn-primary btn-sm" id="mcp-add-server-btn">
+                                        <span class="add-icon">+</span> Add Server
+                                    </button>
+                                </div>
+                                
+                                <!-- Server Cards Grid -->
+                                <div class="mcp-servers-grid" id="mcp-servers-grid">
+                                    <!-- Server cards will be rendered here by JavaScript -->
+                                    <div class="mcp-empty-state" id="mcp-empty-state">
+                                        <div class="empty-icon"><span class="icon-mcp-server icon-xl"></span></div>
+                                        <p>No MCP servers configured</p>
+                                        <p class="empty-hint">Add a server to get started, or choose from presets below</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Add/Edit Server Form (Initially Hidden) -->
+                            <div class="mcp-server-form" id="mcp-server-form" style="display: none;">
+                                <div class="form-header">
+                                    <h3 id="mcp-form-title">Add New Server</h3>
+                                    <button class="btn-icon" id="mcp-form-close" title="Close"><span class="icon-mcp-close"></span></button>
+                                </div>
+                                <div class="form-body">
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label for="mcp-server-name">Server Name <span class="required">*</span></label>
+                                            <input type="text" id="mcp-server-name" class="form-control" placeholder="e.g., my-filesystem" autocomplete="off">
+                                            <small class="form-help">Unique identifier for this server</small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="mcp-server-transport">Transport Type</label>
+                                            <select id="mcp-server-transport" class="form-control">
+                                                <option value="stdio">Stdio (Local Command)</option>
+                                                <option value="sse">SSE (HTTP Endpoint)</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <!-- Stdio Transport Options -->
+                                    <div class="transport-options stdio-options" id="stdio-options">
+                                        <div class="form-group">
+                                            <label for="mcp-server-command">Command <span class="required">*</span></label>
+                                            <input type="text" id="mcp-server-command" class="form-control" placeholder="e.g., npx, python, node">
+                                            <small class="form-help">The executable to run</small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="mcp-server-args">Arguments</label>
+                                            <input type="text" id="mcp-server-args" class="form-control" placeholder="e.g., -y @modelcontextprotocol/server-filesystem /home">
+                                            <small class="form-help">Space-separated command arguments</small>
+                                        </div>
+                                    </div>
+
+                                    <!-- SSE Transport Options -->
+                                    <div class="transport-options sse-options" id="sse-options" style="display: none;">
+                                        <div class="form-group">
+                                            <label for="mcp-server-url">Server URL <span class="required">*</span></label>
+                                            <input type="text" id="mcp-server-url" class="form-control" placeholder="http://localhost:8080/sse">
+                                            <small class="form-help">The SSE endpoint URL</small>
+                                        </div>
+                                    </div>
+
+                                    <!-- Environment Variables -->
+                                    <div class="form-group">
+                                        <label>Environment Variables</label>
+                                        <div class="env-vars-container" id="mcp-env-vars">
+                                            <!-- Env var rows will be added here -->
+                                        </div>
+                                        <button class="btn btn-secondary btn-sm" id="mcp-add-env-var">+ Add Variable</button>
+                                    </div>
+
+                                    <!-- Description -->
+                                    <div class="form-group">
+                                        <label for="mcp-server-description">Description</label>
+                                        <input type="text" id="mcp-server-description" class="form-control" placeholder="Optional description">
+                                    </div>
+
+                                    <!-- Options -->
+                                    <div class="form-row options-row">
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" id="mcp-server-enabled" checked>
+                                            <span>Enabled</span>
+                                        </label>
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" id="mcp-server-auto-connect">
+                                            <span>Auto-connect on startup</span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="form-footer">
+                                    <button class="btn btn-secondary" id="mcp-form-cancel">Cancel</button>
+                                    <button class="btn btn-primary" id="mcp-form-save">Save Server</button>
+                                </div>
+                            </div>
+
+                            <!-- Security Notice -->
+                            <div class="mcp-security-warning">
+                                <div class="warning-icon">⚠️</div>
+                                <div class="warning-content">
+                                    <strong>Security Notice</strong>
+                                    <ul>
+                                        <li>MCP requires Python 3.10 or higher</li>
+                                        <li>MCP integration is experimental/demo only</li>
+                                        <li>Only use trusted MCP servers</li>
+                                        <li>Review each tool call before executing</li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            <!-- Presets Section -->
+                            <div class="mcp-section mcp-presets-section">
+                                <div class="mcp-section-header">
+                                    <h3>Quick Start with Presets</h3>
+                                </div>
+                                <div class="mcp-presets-grid" id="mcp-presets-grid">
+                                    <!-- Preset cards will be rendered here by JavaScript -->
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MCP Server Details Modal (Simple) -->
+    <div id="mcp-details-modal" class="modal" style="display: none;">
+        <div class="modal-overlay" id="mcp-details-overlay"></div>
+        <div class="modal-content mcp-details-content">
+            <div class="modal-header">
+                <h2><span class="icon-mcp-header"></span> Server Details</h2>
+                <button id="mcp-details-close" class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- Server Info -->
+                <div class="details-server-info" id="details-server-info">
+                    <div class="server-name-badge" id="details-server-name">Server</div>
+                    <div class="connection-status" id="details-connection-status">
+                        <span class="status-dot"></span>
+                        <span class="status-text">Checking...</span>
+                    </div>
+                </div>
+
+                <!-- Tools List -->
+                <div class="details-section">
+                    <h3><span class="icon-mcp-tools"></span> Available Tools <span class="count-badge" id="details-tools-count">0</span></h3>
+                    <div class="details-list" id="details-tools-list">
+                        <div class="list-loading">Loading tools...</div>
+                    </div>
+                </div>
+
+                <!-- Resources Summary -->
+                <div class="details-section">
+                    <h3><span class="icon-mcp-resources"></span> Resources <span class="count-badge" id="details-resources-count">0</span></h3>
+                    <p class="details-summary" id="details-resources-summary">No resources available</p>
+                </div>
+
+                <!-- Prompts Summary -->
+                <div class="details-section">
+                    <h3><span class="icon-mcp-prompts"></span> Prompts <span class="count-badge" id="details-prompts-count">0</span></h3>
+                    <p class="details-summary" id="details-prompts-summary">No prompts available</p>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -1033,6 +1312,20 @@
         </div>
     </div>
 
-    <script src="/static/js/app.js"></script>
+    <!-- Reusable Confirm Modal Dialog -->
+    <div id="confirm-modal" class="modal confirm-modal" style="display: none;">
+        <div class="modal-overlay" id="confirm-modal-overlay"></div>
+        <div class="modal-content confirm-modal-content">
+            <div class="confirm-modal-icon" id="confirm-modal-icon">⚠️</div>
+            <h3 class="confirm-modal-title" id="confirm-modal-title">Confirm Action</h3>
+            <p class="confirm-modal-message" id="confirm-modal-message">Are you sure?</p>
+            <div class="confirm-modal-actions">
+                <button class="btn btn-secondary" id="confirm-modal-cancel">Cancel</button>
+                <button class="btn btn-danger" id="confirm-modal-confirm">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="/static/js/app.js"></script>
 </body>
 </html>

@@ -1,6 +1,179 @@
 # Troubleshooting Guide for vLLM Playground
 
-## Common Issues and Solutions
+This guide covers common issues and solutions for vLLM Playground.
+
+## Quick Fixes
+
+| Issue | Quick Fix |
+|-------|-----------|
+| Port already in use | `vllm-playground stop` or `python scripts/kill_playground.py` |
+| Container won't start | `podman logs vllm-service` |
+| Image pull errors | `vllm-playground pull --all` |
+| Tool calling not working | Restart server with "Enable Tool Calling" checked |
+
+---
+
+## Container Issues
+
+### Container Won't Start
+
+```bash
+# Check if Podman is installed
+podman --version
+
+# Check Podman connectivity
+podman ps
+
+# View container logs
+podman logs vllm-service
+
+# Check container status
+podman ps -a | grep vllm-service
+```
+
+### "Address Already in Use" Error
+
+If you lose connection to the Web UI and get `ERROR: address already in use`:
+
+```bash
+# Quick Fix: Auto-detect and kill old process
+python run.py
+
+# Alternative: Manual restart
+./scripts/restart_playground.sh
+
+# Or kill manually
+python scripts/kill_playground.py
+```
+
+### vLLM Container Issues
+
+```bash
+# Check if container is running
+podman ps -a | grep vllm-service
+
+# View vLLM logs
+podman logs -f vllm-service
+
+# Stop and remove container
+podman stop vllm-service && podman rm vllm-service
+
+# Pull latest vLLM images
+podman pull quay.io/rh_ee_micyang/vllm-mac:v0.11.0     # macOS ARM64
+podman pull quay.io/rh_ee_micyang/vllm-cpu:v0.11.0    # Linux x86_64
+podman pull vllm/vllm-openai:v0.11.0                  # GPU (official)
+```
+
+---
+
+## Tool Calling Issues
+
+### Tool Calling Not Working
+
+Tool calling requires **server-side configuration**. If tools aren't being called:
+
+1. **Verify server was started with tool calling enabled:**
+   - Check "Enable Tool Calling" in Server Configuration BEFORE starting
+   - Look for this in startup logs: `Tool calling enabled with parser: llama3_json`
+
+2. **Verify CLI args are passed:**
+   ```
+   vLLM arguments: --model ... --enable-auto-tool-choice --tool-call-parser llama3_json
+   ```
+
+3. **If using container mode**, ensure the container was started fresh after enabling tool calling (stop and restart if needed)
+
+### Tool Call Parse Errors
+
+If you see `Error in extracting tool call from response`:
+
+1. **Increase Max Tokens** to 1024+ in Chat Settings
+2. **Use a larger model** (Qwen 2.5 7B+, Llama 3.1 8B+)
+3. **Reduce tool count** - fewer tools = more reliable parsing
+
+---
+
+## OpenShift/Kubernetes Issues
+
+### GPU Mode Not Available
+
+The Web UI automatically detects GPU availability by querying Kubernetes nodes for `nvidia.com/gpu` resources.
+
+**Check GPU availability in your cluster:**
+```bash
+# List nodes with GPU capacity
+oc get nodes -o custom-columns=NAME:.metadata.name,GPU:.status.capacity.nvidia\.com/gpu
+
+# Or check all node details
+oc describe nodes | grep nvidia.com/gpu
+```
+
+**If GPUs exist but not detected:**
+
+1. Verify RBAC permissions:
+```bash
+oc auth can-i list nodes --as=system:serviceaccount:vllm-playground:vllm-playground-sa
+# Should return "yes"
+```
+
+2. Reapply RBAC if needed:
+```bash
+oc apply -f openshift/manifests/02-rbac.yaml
+```
+
+### Pod Not Starting
+
+```bash
+# Check pod status
+oc get pods -n vllm-playground
+
+# View pod logs
+oc logs -f deployment/vllm-playground-gpu -n vllm-playground
+
+# Describe pod for events
+oc describe pod <pod-name> -n vllm-playground
+```
+
+### Out of Memory (OOM) Issues
+
+**⚠️ Resource Requirements for GuideLLM Benchmarks**
+
+The Web UI pod requires sufficient memory for GuideLLM benchmarks.
+
+**Recommended Memory Limits:**
+- **GPU Mode**: 16Gi minimum, 32Gi+ for intensive benchmarks
+- **CPU Mode**: 64Gi minimum, 128Gi+ for intensive benchmarks
+
+**To increase resources:**
+
+Edit `openshift/manifests/04-webui-deployment.yaml`:
+```yaml
+resources:
+  limits:
+    memory: "32Gi"
+    cpu: "8"
+```
+
+Then reapply:
+```bash
+oc apply -f openshift/manifests/04-webui-deployment.yaml
+```
+
+### Image Pull Errors
+
+All images are publicly accessible - no authentication needed:
+- **GPU**: `vllm/vllm-openai:v0.11.0`
+- **CPU**: `quay.io/rh_ee_micyang/vllm-cpu:v0.11.0`
+
+```bash
+# Verify image accessibility
+podman pull vllm/vllm-openai:v0.11.0
+podman pull quay.io/rh_ee_micyang/vllm-cpu:v0.11.0
+```
+
+---
+
+## Common vLLM Issues
 
 ### 1. Engine Core Initialization Failed with "Torch not compiled with CUDA enabled"
 
