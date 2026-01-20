@@ -284,10 +284,26 @@ const ClaudeCodeMethods = {
         // Focus terminal to enable keyboard input
         this.claudeTerminal.focus();
         
-        // Focus terminal when clicking on container
+        // Focus terminal when clicking anywhere in terminal area
         terminalContainer.addEventListener('click', () => {
             this.claudeTerminal.focus();
         });
+        
+        // Also handle mousedown to capture focus before other handlers
+        terminalContainer.addEventListener('mousedown', () => {
+            this.claudeTerminal.focus();
+        });
+        
+        // Ensure terminal wrapper also handles clicks
+        const terminalWrapper = document.getElementById('claude-terminal-wrapper');
+        if (terminalWrapper) {
+            terminalWrapper.addEventListener('click', (e) => {
+                // Focus terminal if click was inside wrapper but outside buttons
+                if (!e.target.closest('button')) {
+                    this.claudeTerminal.focus();
+                }
+            });
+        }
         
         // Connect to WebSocket
         this.connectClaudeWebSocket();
@@ -348,9 +364,16 @@ const ClaudeCodeMethods = {
             try {
                 const message = JSON.parse(event.data);
                 
+                // Check if terminal is currently in the active view
+                const isClaudeViewActive = document.getElementById('claude-code-view')?.classList.contains('active');
+                
                 switch (message.type) {
                     case 'output':
                         this.claudeTerminal.write(message.data);
+                        // Re-focus terminal after output if view is active (helps maintain input)
+                        if (isClaudeViewActive) {
+                            this.claudeTerminal.focus();
+                        }
                         break;
                     
                     case 'connected':
