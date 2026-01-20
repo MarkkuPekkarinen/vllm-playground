@@ -308,6 +308,12 @@ class VLLMContainerManager:
         model_source = vllm_config.get('model_source', vllm_config.get('model'))
         vllm_args.extend(["--model", model_source])
         
+        # Served model name (alias for API calls, required for Claude Code when model has '/')
+        served_model_name = vllm_config.get('served_model_name')
+        if served_model_name:
+            vllm_args.extend(["--served-model-name", served_model_name])
+            logger.info(f"Using served model name: {served_model_name}")
+        
         # Host and port (inside container)
         vllm_args.extend(["--host", "0.0.0.0"])
         vllm_args.extend(["--port", "8000"])

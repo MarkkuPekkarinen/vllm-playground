@@ -1324,17 +1324,19 @@
                                 <span class="cmd-divider">or</span>
                                 <code class="alt-cmd">pip install ptyprocess</code>
                             </div>
+                            <p class="warning-hint" style="margin-top: 12px;">Note: You also need to install Claude Code CLI separately. See <a href="https://code.claude.com/docs/en/setup" target="_blank" rel="noopener">official setup guide</a> for installation options.</p>
                         </div>
 
                         <!-- Claude Not Installed Warning -->
                         <div class="claude-install-warning" id="claude-not-installed" style="display: none;">
                             <div class="warning-icon">📦</div>
                             <h3>Claude Code Not Installed</h3>
-                            <p>Install Claude Code CLI to use this feature:</p>
+                            <p>Install Claude Code CLI to use this feature.</p>
+                            <p class="warning-hint">Recommended (native install):</p>
                             <div class="install-commands">
-                                <code class="primary-cmd">npm install -g @anthropic-ai/claude-code</code>
+                                <code class="primary-cmd">curl -fsSL https://claude.ai/install.sh | bash</code>
                             </div>
-                            <button class="btn btn-primary" id="claude-install-btn">Install Claude Code</button>
+                            <p class="warning-hint" style="margin-top: 8px;">See <a href="https://code.claude.com/docs/en/setup" target="_blank" rel="noopener">official setup guide</a> for all installation options (Homebrew, WinGet, npm).</p>
                         </div>
 
                         <!-- vLLM Not Running Warning -->

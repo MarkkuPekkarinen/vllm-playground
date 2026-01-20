@@ -1901,7 +1901,8 @@ async def start_server(config: VLLMConfig):
                 'local_model_path': config.local_model_path,
                 'enable_tool_calling': config.enable_tool_calling,
                 'tool_call_parser': config.tool_call_parser,
-                'accelerator': config.accelerator  # GPU accelerator type (nvidia/amd)
+                'accelerator': config.accelerator,  # GPU accelerator type (nvidia/amd)
+                'served_model_name': config.served_model_name  # Model alias (for Claude Code)
             }
             
             logger.info(f"Container config: enable_tool_calling={config.enable_tool_calling}, tool_call_parser={config.tool_call_parser}")
