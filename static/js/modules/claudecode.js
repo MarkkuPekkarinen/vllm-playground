@@ -281,6 +281,14 @@ const ClaudeCodeMethods = {
         // Fit terminal to container
         this.fitClaudeTerminal();
         
+        // Focus terminal to enable keyboard input
+        this.claudeTerminal.focus();
+        
+        // Focus terminal when clicking on container
+        terminalContainer.addEventListener('click', () => {
+            this.claudeTerminal.focus();
+        });
+        
         // Connect to WebSocket
         this.connectClaudeWebSocket();
         
@@ -332,6 +340,8 @@ const ClaudeCodeMethods = {
             console.log('Claude Code terminal WebSocket connected');
             this.claudeTerminal.writeln('\x1b[32m● Connected to Claude Code terminal\x1b[0m');
             this.claudeTerminal.writeln('');
+            // Focus terminal to enable keyboard input
+            this.claudeTerminal.focus();
         };
         
         this.claudeWebSocket.onmessage = (event) => {
@@ -356,6 +366,17 @@ const ClaudeCodeMethods = {
                     
                     case 'pong':
                         // Heartbeat response
+                        break;
+                    
+                    case 'exit':
+                        // Claude Code process exited
+                        const exitCode = message.exit_status ?? 'unknown';
+                        const signal = message.signal_status;
+                        if (signal) {
+                            this.claudeTerminal.writeln(`\x1b[33m● Claude Code exited (signal: ${signal})\x1b[0m`);
+                        } else {
+                            this.claudeTerminal.writeln(`\x1b[33m● Claude Code exited (code: ${exitCode})\x1b[0m`);
+                        }
                         break;
                     
                     default:
@@ -483,9 +504,15 @@ const ClaudeCodeMethods = {
         // Refresh status
         this.checkClaudeCodeStatus();
         
-        // Fit terminal if exists
-        if (this.claudeTerminal && this.claudeFitAddon) {
-            setTimeout(() => this.fitClaudeTerminal(), 100);
+        // Fit terminal and focus if exists
+        if (this.claudeTerminal) {
+            setTimeout(() => {
+                if (this.claudeFitAddon) {
+                    this.fitClaudeTerminal();
+                }
+                // Focus terminal to enable keyboard input
+                this.claudeTerminal.focus();
+            }, 100);
         }
     },
     
