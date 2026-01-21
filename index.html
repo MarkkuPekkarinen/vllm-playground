@@ -1348,7 +1348,24 @@
                             <div class="warning-icon"><img src="/assets/vllm-logo.svg" alt="vLLM" class="warning-logo"></div>
                             <h3>vLLM Server Not Running</h3>
                             <p>Start a vLLM server first to use Claude Code.</p>
-                            <p class="warning-hint">Go to the vLLM Server tab and start a server with a model that supports tool calling.</p>
+                            
+                            <div class="claude-model-tip">
+                                <h4>Recommended Configuration</h4>
+                                <div class="tip-model">
+                                    <strong>Model:</strong> <code>meta-llama/Llama-3.1-8B-Instruct</code>
+                                </div>
+                                <div class="tip-args">
+                                    <strong>Required Settings:</strong>
+                                    <ul>
+                                        <li>Max Model Length: <code>65536</code> (Claude Code needs 32K+ for responses)</li>
+                                        <li>Enable Tool Calling: <code>✓</code></li>
+                                        <li>Tool Call Parser: <code>llama3_json</code></li>
+                                        <li>Served Model Name: Set a simple name (e.g., <code>my-code</code>)</li>
+                                    </ul>
+                                </div>
+                                <p class="tip-note">Requires vLLM v0.12.0+ for Anthropic API support. See setup tips below terminal for GPU memory guide.</p>
+                            </div>
+                            
                             <a href="#" id="claude-goto-vllm" class="btn btn-primary">Go to vLLM Server</a>
                         </div>
 
