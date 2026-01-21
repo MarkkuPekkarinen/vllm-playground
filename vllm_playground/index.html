@@ -247,6 +247,19 @@
                                 </div>
                             </div>
 
+                            <!-- Virtual Environment Path (optional) - Only for Subprocess mode -->
+                            <div class="form-group" id="venv-path-group" style="display: none;">
+                                <label for="venv-path" data-i18n="serverConfig.venvPath.label">Custom Virtual Environment Path (Optional)</label>
+                                <input
+                                    type="text"
+                                    id="venv-path"
+                                    class="form-control"
+                                    placeholder="~/.venv-vllm-metal"
+                                    data-i18n-placeholder="serverConfig.venvPath.placeholder"
+                                >
+                                <small class="form-help" data-i18n="serverConfig.venvPath.help">Specify path to a virtual environment containing vLLM or vLLM-Metal. Leave empty to use system Python.</small>
+                            </div>
+
                             <!-- CPU/GPU Mode Toggle -->
                             <div class="form-group mode-toggle-group">
                                 <label data-i18n="serverConfig.computeMode.label">Compute Mode</label>
@@ -258,6 +271,10 @@
                                     <label class="mode-button" id="mode-gpu-label">
                                         <input type="radio" name="compute-mode" id="mode-gpu" value="gpu">
                                         <span data-i18n="serverConfig.computeMode.gpu">🎮 GPU</span>
+                                    </label>
+                                    <label class="mode-button" id="mode-metal-label">
+                                        <input type="radio" name="compute-mode" id="mode-metal" value="metal">
+                                        <span data-i18n="serverConfig.computeMode.metal">⚡ Metal</span>
                                     </label>
                                 </div>
                                 <!-- Accelerator Selection (separate line, shown when GPU mode selected) -->
@@ -345,8 +362,8 @@
 
                             <div class="form-group">
                                 <label for="max-model-len" data-i18n="serverConfig.maxModelLen.label">Max Model Length (optional)</label>
-                                <input type="number" id="max-model-len" class="form-control" placeholder="2048 (CPU) / 8192 (GPU)">
-                                <small class="form-help" data-i18n="serverConfig.maxModelLen.help">Leave empty to use safe defaults: 2048 (CPU) or 8192 (GPU)</small>
+                                <input type="number" id="max-model-len" class="form-control" placeholder="2048 (CPU/Metal) / 8192 (GPU)">
+                                <small class="form-help" data-i18n="serverConfig.maxModelLen.help">Leave empty to use safe defaults: 2048 (CPU/Metal) or 8192 (GPU)</small>
                             </div>
 
                             <!-- Advanced: Chat Template Settings -->

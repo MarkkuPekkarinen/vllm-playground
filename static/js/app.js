@@ -40,6 +40,11 @@ class VLLMWebUI {
         this.modelscopeInstalled = false;
         this.modelscopeVersion = null;
 
+        // vLLM state (for subprocess mode)
+        this.vllmInstalled = false;
+        this.vllmVersion = null;
+        this.containerModeAvailable = false;
+
         // MCP (Model Context Protocol) state
         this.mcpAvailable = false;
         this.mcpConfigs = [];           // All configured MCP servers
@@ -95,11 +100,13 @@ class VLLMWebUI {
             validationMessage: document.getElementById('validation-message'),
             localModelInfo: document.getElementById('local-model-info'),
 
-            // CPU/GPU Mode
+            // CPU/GPU/Metal Mode
             modeCpu: document.getElementById('mode-cpu'),
             modeGpu: document.getElementById('mode-gpu'),
+            modeMetal: document.getElementById('mode-metal'),
             modeCpuLabel: document.getElementById('mode-cpu-label'),
             modeGpuLabel: document.getElementById('mode-gpu-label'),
+            modeMetalLabel: document.getElementById('mode-metal-label'),
             modeHelpText: document.getElementById('mode-help-text'),
             cpuSettings: document.getElementById('cpu-settings'),
 
@@ -110,6 +117,10 @@ class VLLMWebUI {
             runModeContainerLabel: document.getElementById('run-mode-container-label'),
             runModeHelpText: document.getElementById('run-mode-help-text'),
             gpuSettings: document.getElementById('gpu-settings'),
+
+            // Venv path (for custom vLLM installations)
+            venvPathGroup: document.getElementById('venv-path-group'),
+            venvPathInput: document.getElementById('venv-path'),
 
             // GPU settings
             tensorParallel: document.getElementById('tensor-parallel'),
@@ -1046,6 +1057,7 @@ number ::= [0-9]+`
         // CPU/GPU mode toggle
         this.elements.modeCpu.addEventListener('change', () => this.toggleComputeMode());
         this.elements.modeGpu.addEventListener('change', () => this.toggleComputeMode());
+        this.elements.modeMetal.addEventListener('change', () => this.toggleComputeMode());
 
         // Accelerator selection change (NVIDIA/AMD)
         if (this.elements.acceleratorSelect) {
@@ -1058,6 +1070,11 @@ number ::= [0-9]+`
         // Run mode toggle
         this.elements.runModeSubprocess.addEventListener('change', () => this.toggleRunMode());
         this.elements.runModeContainer.addEventListener('change', () => this.toggleRunMode());
+
+        // Virtual environment path validation (check vLLM version when path changes)
+        if (this.elements.venvPathInput) {
+            this.elements.venvPathInput.addEventListener('blur', () => this.checkVenvVersion());
+        }
 
         // Model Source toggle
         this.elements.modelSourceHub.addEventListener('change', () => this.toggleModelSource());
@@ -1200,6 +1217,8 @@ number ::= [0-9]+`
             this.elements.port,
             this.elements.modeCpu,
             this.elements.modeGpu,
+            this.elements.modeMetal,
+            this.elements.venvPathInput,
             this.elements.tensorParallel,
             this.elements.gpuMemory,
             this.elements.cpuKvcache,
@@ -1330,6 +1349,43 @@ number ::= [0-9]+`
             await this.checkHardwareCapabilities();
         } catch (error) {
             console.error('Error checking feature availability:', error);
+        }
+    }
+
+    async checkVenvVersion() {
+        const venvPath = this.elements.venvPathInput?.value?.trim();
+
+        if (!venvPath) {
+            // Reset to system vLLM version when venv path is cleared
+            await this.checkFeatureAvailability();
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/check-venv', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ venv_path: venvPath })
+            });
+
+            const result = await response.json();
+
+            if (result.vllm_installed) {
+                this.vllmInstalled = true;
+                this.vllmVersion = result.vllm_version;
+            } else {
+                this.vllmInstalled = false;
+                this.vllmVersion = null;
+            }
+
+            // Update UI with new version info
+            this.updateRunModeAvailability();
+
+        } catch (error) {
+            console.error('Error checking venv vLLM version:', error);
+            // Don't change vllm status on error - keep previous state
         }
     }
 
@@ -1597,11 +1653,16 @@ number ::= [0-9]+`
 
     toggleComputeMode() {
         const isCpuMode = this.elements.modeCpu.checked;
+        const isGpuMode = this.elements.modeGpu.checked;
+        const isMetalMode = this.elements.modeMetal.checked;
 
         // Update button active states
+        this.elements.modeCpuLabel.classList.remove('active');
+        this.elements.modeGpuLabel.classList.remove('active');
+        this.elements.modeMetalLabel.classList.remove('active');
+
         if (isCpuMode) {
             this.elements.modeCpuLabel.classList.add('active');
-            this.elements.modeGpuLabel.classList.remove('active');
             this.elements.modeHelpText.textContent = 'CPU mode is recommended for macOS';
             this.elements.dtypeHelpText.textContent = 'BFloat16 recommended for CPU';
 
@@ -1616,8 +1677,7 @@ number ::= [0-9]+`
 
             // Set dtype to bfloat16 for CPU
             this.elements.dtype.value = 'bfloat16';
-        } else {
-            this.elements.modeCpuLabel.classList.remove('active');
+        } else if (isGpuMode) {
             this.elements.modeGpuLabel.classList.add('active');
             this.elements.dtypeHelpText.textContent = 'Auto recommended for GPU';
 
@@ -1630,6 +1690,23 @@ number ::= [0-9]+`
 
             // Set dtype to auto for GPU
             this.elements.dtype.value = 'auto';
+        } else if (isMetalMode) {
+            this.elements.modeMetalLabel.classList.add('active');
+            this.elements.modeHelpText.textContent = 'Metal GPU mode for Apple Silicon (requires venv path)';
+            this.elements.dtypeHelpText.textContent = 'BFloat16 recommended for Metal';
+
+            // Hide both CPU and GPU settings for Metal (uses defaults)
+            this.elements.cpuSettings.style.display = 'none';
+            this.elements.gpuSettings.style.display = 'none';
+
+            // Set dtype to bfloat16 for Metal
+            this.elements.dtype.value = 'bfloat16';
+
+            // Metal requires subprocess mode
+            if (this.elements.runModeSubprocess) {
+                this.elements.runModeSubprocess.checked = true;
+                this.toggleRunMode();
+            }
         }
 
         // Update accelerator row visibility (only shown in container mode + GPU mode)
@@ -1689,16 +1766,29 @@ number ::= [0-9]+`
             this.elements.runModeSubprocessLabel.classList.add('active');
             this.elements.runModeContainerLabel.classList.remove('active');
 
+            // Show venv path option only in subprocess mode
+            if (this.elements.venvPathGroup) {
+                this.elements.venvPathGroup.style.display = 'block';
+            }
+
             // Check if vLLM is installed
             if (!this.vllmInstalled) {
                 this.elements.runModeHelpText.innerHTML = '<span style="color: var(--error-color);">⚠️ vLLM not installed. Run: pip install vllm</span>';
+            } else if (!this.vllmVersion) {
+                // vLLM is installed but version couldn't be detected
+                this.elements.runModeHelpText.innerHTML = '<span style="color: var(--warning-color);">⚠️ vLLM installed but version unknown (dev install or missing metadata). Specify venv path below for better detection.</span>';
             } else {
-                const versionText = this.vllmVersion ? `v${this.vllmVersion}` : 'version unknown';
-                this.elements.runModeHelpText.textContent = `Subprocess: Direct execution using vLLM (${versionText})`;
+                // vLLM is installed with known version
+                this.elements.runModeHelpText.textContent = `Subprocess: Direct execution using vLLM v${this.vllmVersion}`;
             }
         } else {
             this.elements.runModeSubprocessLabel.classList.remove('active');
             this.elements.runModeContainerLabel.classList.add('active');
+
+            // Hide venv path option in container mode
+            if (this.elements.venvPathGroup) {
+                this.elements.venvPathGroup.style.display = 'none';
+            }
 
             if (!this.containerModeAvailable) {
                 this.elements.runModeHelpText.innerHTML = '<span style="color: var(--error-color);">⚠️ No container runtime (podman/docker) found</span>';
@@ -1723,10 +1813,12 @@ number ::= [0-9]+`
         if (!this.vllmInstalled) {
             subprocessLabel.classList.add('mode-unavailable');
             subprocessLabel.title = 'vLLM not installed. Run: pip install vllm';
+        } else if (!this.vllmVersion) {
+            subprocessLabel.classList.remove('mode-unavailable');
+            subprocessLabel.title = 'vLLM installed but version unknown (dev install or missing metadata)';
         } else {
             subprocessLabel.classList.remove('mode-unavailable');
-            const versionText = this.vllmVersion ? `v${this.vllmVersion}` : 'version unknown';
-            subprocessLabel.title = `vLLM (${versionText}) installed`;
+            subprocessLabel.title = `vLLM v${this.vllmVersion} installed`;
         }
 
         if (!this.containerModeAvailable) {
@@ -2067,9 +2159,16 @@ number ::= [0-9]+`
 
         const localModelPath = this.elements.localModelPath.value.trim();
         const maxModelLen = this.elements.maxModelLen.value;
-        const isCpuMode = this.elements.modeCpu.checked;
         const hfToken = this.elements.hfToken.value.trim();
         const modelscopeToken = this.elements.modelscopeToken.value.trim();
+
+        // Get compute mode (cpu, gpu, or metal)
+        let computeMode = 'cpu';
+        if (this.elements.modeGpu.checked) {
+            computeMode = 'gpu';
+        } else if (this.elements.modeMetal.checked) {
+            computeMode = 'metal';
+        }
 
         // Get run mode (subprocess or container)
         const runMode = document.getElementById('run-mode-subprocess').checked ? 'subprocess' : 'container';
@@ -2080,10 +2179,11 @@ number ::= [0-9]+`
             port: parseInt(this.elements.port.value),
             dtype: this.elements.dtype.value,
             max_model_len: maxModelLen ? parseInt(maxModelLen) : null,
-            run_mode: runMode,  // Add run_mode to config
+            run_mode: runMode,
             trust_remote_code: this.elements.trustRemoteCode.checked,
             enable_prefix_caching: this.elements.enablePrefixCaching.checked,
-            use_cpu: isCpuMode,
+            compute_mode: computeMode,  // New: send compute_mode instead of use_cpu
+            venv_path: this.elements.venvPathInput?.value.trim() || null,  // New: custom venv path
             hf_token: hfToken || null,  // Include HF token for gated models
             local_model_path: isLocalModel && localModelPath ? localModelPath : null,  // Add local model path
             use_modelscope: isModelscope,  // Flag to indicate ModelScope source
@@ -2097,10 +2197,11 @@ number ::= [0-9]+`
         // The fields in the UI are for reference/display only
         // Users who need custom templates can set them via server config JSON or API
 
-        if (isCpuMode) {
-            // CPU-specific settings
+        if (computeMode === 'cpu' || computeMode === 'metal') {
+            // CPU and Metal-specific settings
             config.cpu_kvcache_space = parseInt(this.elements.cpuKvcache.value);
             config.cpu_omp_threads_bind = this.elements.cpuThreads.value;
+            config.use_cpu = (computeMode === 'cpu');  // Set use_cpu for backward compatibility
         } else {
             // GPU-specific settings
             config.tensor_parallel_size = parseInt(this.elements.tensorParallel.value);
@@ -2108,6 +2209,7 @@ number ::= [0-9]+`
             config.load_format = "auto";
             // GPU accelerator type (nvidia/amd) for container mode
             config.accelerator = this.elements.acceleratorSelect.value;
+            config.use_cpu = false;  // Backward compatibility
             // GPU device selection
             const gpuDevice = this.elements.gpuDevice.value.trim();
             if (gpuDevice) {
@@ -2209,7 +2311,15 @@ number ::= [0-9]+`
         }
 
         this.addLog(`Run Mode: ${config.run_mode === 'subprocess' ? 'Subprocess (Direct)' : 'Container (Isolated)'}`, 'info');
-        this.addLog(`Compute Mode: ${config.use_cpu ? 'CPU' : `GPU (${config.accelerator?.toUpperCase() || 'NVIDIA'})`}`, 'info');
+        // Show compute mode with accelerator info if GPU mode
+        let computeModeLabel = config.compute_mode.toUpperCase();
+        if (config.compute_mode === 'gpu' && config.accelerator) {
+            computeModeLabel += ` (${config.accelerator.toUpperCase()})`;
+        }
+        this.addLog(`Compute Mode: ${computeModeLabel}`, 'info');
+        if (config.venv_path) {
+            this.addLog(`Using custom venv: ${config.venv_path}`, 'info');
+        }
 
         try {
             const response = await fetch('/api/start', {
@@ -3593,9 +3703,19 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
         const maxModelLen = this.elements.maxModelLen.value;
         const trustRemoteCode = this.elements.trustRemoteCode.checked;
         const enablePrefixCaching = this.elements.enablePrefixCaching.checked;
+
+        // Determine compute mode: cpu, gpu, or metal
         const isCpuMode = this.elements.modeCpu.checked;
+        const isMetalMode = this.elements.modeMetal?.checked || false;
+        // Metal mode uses GPU settings (not CPU)
+        const useGpuSettings = !isCpuMode;  // Both GPU and Metal use GPU settings
+
         const hfToken = this.elements.hfToken.value.trim();
         const modelscopeToken = this.elements.modelscopeToken.value.trim();
+
+        // Get venv path if specified (for subprocess mode)
+        const venvPath = this.elements.venvPathInput?.value.trim() || '';
+        const pythonExec = venvPath ? `${venvPath}/bin/python` : 'python';
 
         // Build command string
         let cmd;
@@ -3618,7 +3738,7 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
             } else if (hfToken) {
                 cmd += `export HF_TOKEN=[YOUR_TOKEN]\n`;
             }
-            cmd += `\npython -m vllm.entrypoints.openai.api_server`;
+            cmd += `\n${pythonExec} -m vllm.entrypoints.openai.api_server`;
             cmd += ` \\\n  --model ${model}`;
             cmd += ` \\\n  --host ${host}`;
             cmd += ` \\\n  --port ${port}`;
@@ -3651,7 +3771,7 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                 cmd += `export HF_TOKEN=[YOUR_TOKEN]\n\n`;
             }
 
-            cmd += `python -m vllm.entrypoints.openai.api_server`;
+            cmd += `${pythonExec} -m vllm.entrypoints.openai.api_server`;
             cmd += ` \\\n  --model ${model}`;
             cmd += ` \\\n  --host ${host}`;
             cmd += ` \\\n  --port ${port}`;
@@ -3665,8 +3785,10 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
             cmd += ` \\\n  --gpu-memory-utilization ${gpuMemory}`;
             cmd += ` \\\n  --load-format auto`;
             if (!maxModelLen) {
-                cmd += ` \\\n  --max-model-len 8192`;
-                cmd += ` \\\n  --max-num-batched-tokens 8192`;
+                // Metal uses 2048 like CPU (less memory than desktop GPUs)
+                const defaultMaxLen = isMetalMode ? 2048 : 8192;
+                cmd += ` \\\n  --max-model-len ${defaultMaxLen}`;
+                cmd += ` \\\n  --max-num-batched-tokens ${defaultMaxLen}`;
             }
         }
 
