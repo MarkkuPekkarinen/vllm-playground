@@ -48,8 +48,12 @@ Open http://localhost:7860 and click "Start Server" - that's it! 🎉
 ### CLI Options
 
 ```bash
-vllm-playground pull                # Pre-download GPU image
+vllm-playground pull                # Pre-download GPU image (NVIDIA)
+vllm-playground pull --nvidia       # Pre-download NVIDIA GPU image
+vllm-playground pull --amd          # Pre-download AMD ROCm image
+vllm-playground pull --tpu          # Pre-download Google TPU image
 vllm-playground pull --cpu          # Pre-download CPU image
+vllm-playground pull --all          # Pre-download all images
 vllm-playground --port 8080         # Custom port
 vllm-playground stop                # Stop running instance
 vllm-playground status              # Check status
