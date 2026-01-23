@@ -531,27 +531,27 @@
     .claude-code-layout {
         padding: 12px;
     }
-    
+
     .claude-code-header {
         flex-direction: column;
         gap: 16px;
         text-align: center;
     }
-    
+
     .claude-header-title {
         flex-direction: column;
     }
-    
+
     .claude-connection-bar {
         flex-direction: column;
         gap: 12px;
     }
-    
+
     .connection-info {
         flex-wrap: wrap;
         justify-content: center;
     }
-    
+
     .connection-model {
         border-left: none;
         padding-left: 0;

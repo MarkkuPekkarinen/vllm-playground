@@ -14,7 +14,7 @@ const en = {
         collapseSidebar: 'Collapse sidebar',
         expandSidebar: 'Expand sidebar'
     },
-    
+
     // Status messages
     status: {
         connected: 'Connected',
@@ -26,7 +26,7 @@ const en = {
         offline: 'Offline',
         online: 'Online'
     },
-    
+
     // Server Configuration Panel
     serverConfig: {
         title: '⚙️ Server Configuration',
@@ -120,7 +120,7 @@ const en = {
             stop: 'Stop Server'
         }
     },
-    
+
     // Server messages
     server: {
         starting: 'Starting vLLM server...',
@@ -131,7 +131,7 @@ const en = {
         ready: 'Server is ready',
         notReady: 'Server is not ready'
     },
-    
+
     // Chat Interface
     chat: {
         title: '💬 Chat Interface',
@@ -146,7 +146,7 @@ const en = {
         error: 'Error generating response',
         clearConfirm: 'Are you sure you want to clear all chat history?'
     },
-    
+
     // MCP (Model Context Protocol)
     mcp: {
         nav: 'MCP Servers',
@@ -215,14 +215,14 @@ const en = {
         disconnected: 'Disconnected',
         error: 'Error'
     },
-    
+
     // Container Runtime
     containerRuntime: {
         checking: 'Checking...',
         detected: 'Container Runtime',
         notDetected: 'No container runtime'
     },
-    
+
     // Confirm Modal
     confirmModal: {
         title: 'Confirm Action',
@@ -230,7 +230,7 @@ const en = {
         cancel: 'Cancel',
         confirm: 'Confirm'
     },
-    
+
     // Metrics Panel
     metrics: {
         title: '📊 Response Metrics',
@@ -244,7 +244,7 @@ const en = {
         gpuKvCacheUsage: 'GPU KV Cache Usage:',
         prefixCacheHitRate: 'Prefix Cache Hit Rate:'
     },
-    
+
     // Logs Panel
     logs: {
         title: '📋 Server Logs',
@@ -252,7 +252,7 @@ const en = {
         save: 'Save',
         clear: 'Clear'
     },
-    
+
     // Log messages
     log: {
         connected: 'WebSocket connected',
@@ -262,7 +262,7 @@ const en = {
         info: 'Info',
         success: 'Success'
     },
-    
+
     // Validation messages
     validation: {
         required: 'This field is required',
@@ -272,7 +272,7 @@ const en = {
         valid: 'Valid',
         invalid: 'Invalid'
     },
-    
+
     // Benchmark messages
     benchmark: {
         title: 'Performance Benchmarking',
@@ -305,7 +305,7 @@ const en = {
             help: 'Equivalent GuideLLM command for this benchmark configuration'
         }
     },
-    
+
     // Tool messages
     tool: {
         added: 'Tool added',
@@ -315,7 +315,7 @@ const en = {
         calling: 'Calling tool...',
         executionResult: 'Execution Result'
     },
-    
+
     // File operations
     file: {
         uploading: 'Uploading...',
@@ -324,7 +324,7 @@ const en = {
         downloading: 'Downloading...',
         downloaded: 'Downloaded'
     },
-    
+
     // Common actions
     action: {
         save: 'Save',
@@ -348,7 +348,7 @@ const en = {
         connect: 'Connect',
         disconnect: 'Disconnect'
     },
-    
+
     // Error messages
     error: {
         unknown: 'Unknown error occurred',
@@ -360,7 +360,7 @@ const en = {
         forbidden: 'Access forbidden',
         unauthorized: 'Unauthorized'
     },
-    
+
     // Time-related
     time: {
         justNow: 'Just now',
@@ -369,7 +369,7 @@ const en = {
         daysAgo: '{{days}} days ago',
         uptime: 'Uptime: {{time}}'
     },
-    
+
     // Units
     units: {
         tokens: 'tokens',
@@ -381,14 +381,14 @@ const en = {
         tools: 'tools',
         servers: 'servers'
     },
-    
+
     // Theme
     theme: {
         toggle: 'Toggle dark/light mode',
         dark: 'Dark',
         light: 'Light'
     },
-    
+
     // Language
     language: {
         switch: 'Switch Language',
@@ -401,4 +401,3 @@ const en = {
 if (window.i18n) {
     window.i18n.register('en', en);
 }
-

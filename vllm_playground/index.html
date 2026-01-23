@@ -23,7 +23,7 @@
                 <img src="/assets/vllm-logo.svg" alt="vLLM-Playground" class="nav-logo" onerror="this.style.display='none'">
                 <span class="nav-title">vLLM-Playground</span>
             </div>
-            
+
             <div class="nav-items">
                 <!-- vLLM Projects Section -->
                 <div class="nav-section-label">vLLM Projects</div>
@@ -35,12 +35,12 @@
                     <img src="/assets/guidellm-logo.svg" alt="" class="nav-item-logo" onerror="this.style.display='none'">
                     <span class="nav-label" data-i18n="nav.guidellm">GuideLLM</span>
                 </button>
-                
+
                 <!-- Divider -->
                 <div class="nav-divider">
                     <span class="nav-divider-label">Integrations</span>
                 </div>
-                
+
                 <!-- Integrations Section -->
                 <button class="nav-item" data-view="mcp-config" title="MCP Servers" id="nav-mcp">
                     <span class="nav-item-icon icon-mcp-nav"></span>
@@ -52,7 +52,7 @@
                     <span class="nav-label">Claude Code</span>
                 </button>
             </div>
-            
+
             <div class="nav-footer">
                 <div class="nav-status">
                     <span id="nav-status-dot" class="status-dot"></span>
@@ -64,7 +64,7 @@
                 </button>
             </div>
         </nav>
-        
+
         <!-- Sidebar Resize Handle -->
         <div class="nav-resize-handle" id="nav-resize-handle"></div>
 
@@ -106,7 +106,7 @@
                     <aside class="sidebar resizable" id="config-panel">
                         <div class="panel">
                             <h2 data-i18n="serverConfig.title">⚙️ Server Configuration</h2>
-                            
+
                             <!-- Model Source Toggle -->
                             <div class="form-group mode-toggle-group">
                                 <label data-i18n="serverConfig.modelSource.label">Model Source</label>
@@ -146,7 +146,7 @@
                                 </select>
                                 <small class="form-help">All models support chat interface. Gated models require HF token below.</small>
                                 <input type="text" id="custom-model" class="form-control" placeholder="Or enter custom model name">
-                                
+
                                 <!-- Community Recipes Button -->
                                 <button id="browse-recipes-btn" class="btn btn-secondary btn-sm browse-recipes-btn" data-i18n="serverConfig.model.browseRecipes">
                                     📚 Browse Community Recipes
@@ -185,13 +185,13 @@
                                     </button>
                                 </div>
                                 <small class="form-help">Enter absolute path to directory containing model files (config.json, weights, etc.). Supports ~ for home directory.</small>
-                                
+
                                 <!-- Validation Status -->
                                 <div id="local-model-validation" class="validation-status" style="display: none; margin-top: 8px;">
                                     <span id="validation-icon"></span>
                                     <span id="validation-message"></span>
                                 </div>
-                                
+
                                 <!-- Model Info Display -->
                                 <div id="local-model-info" class="model-info-box" style="display: none; margin-top: 10px; padding: 10px; background: #1e293b; border-radius: 6px; border-left: 3px solid #10b981;">
                                     <div class="info-row">
@@ -317,7 +317,7 @@
                                     <input type="text" id="gpu-device" class="form-control" placeholder="0, 1, 0,1 (leave empty for auto)">
                                     <small class="form-help">Specify GPU device ID(s): 0, 1, 0,1, etc. Leave empty for auto-selection.</small>
                                 </div>
-                                
+
                                 <!-- GPU Status Display -->
                                 <div id="gpu-status-display" class="gpu-status-panel" style="display: none;">
                                     <div class="panel-header">
@@ -376,13 +376,13 @@
                                     <div class="info-box" style="background: #1e40af20; border-left: 3px solid #1e40af; padding: 10px; margin-bottom: 15px; border-radius: 4px;">
                                         <strong>ℹ️ Note:</strong> vLLM automatically loads chat templates and stop tokens from each model's tokenizer config. The fields below show reference templates for documentation purposes only. Modern models (2023+) all have built-in templates that work correctly.
                                     </div>
-                                    
+
                                     <div class="form-group">
                                         <label for="chat-template">Chat Template (Jinja2) <span style="color: #10b981; font-size: 0.85em;">🔄 Reference Only</span></label>
                                         <textarea id="chat-template" class="form-control template-textarea" rows="4" spellcheck="false" placeholder="Will be loaded from model's tokenizer config..." readonly></textarea>
                                         <small class="form-help">vLLM automatically uses the model's chat template from tokenizer config. Shown for reference only.</small>
                                     </div>
-                                    
+
                                     <div class="form-group">
                                         <label for="stop-tokens">Stop Tokens (comma-separated) <span style="color: #10b981; font-size: 0.85em;">🔄 Reference Only</span></label>
                                         <input type="text" id="stop-tokens" class="form-control" placeholder="Will be loaded from model's tokenizer config..." readonly>
@@ -462,7 +462,7 @@
                                     <button id="clear-chat-btn" class="btn btn-secondary btn-sm" style="min-width: 80px; padding: 6px 16px;" data-i18n="chat.clear">Clear</button>
                                 </div>
                             </div>
-                            
+
                             <div id="chat-container" class="chat-container">
                                 <div class="chat-message system">
                                     <div class="message-content">
@@ -477,7 +477,7 @@
                                     <textarea id="chat-input" class="chat-input" data-i18n-placeholder="chat.inputPlaceholder" placeholder="Type your message here..." rows="1"></textarea>
                                     <button id="send-btn" class="btn btn-primary" disabled data-i18n="chat.send">Send</button>
                                 </div>
-                                
+
                                 <!-- Inline Expandable Panels -->
                                 <div class="inline-panels">
                                     <!-- System Settings Panel -->
@@ -501,7 +501,7 @@
                                             </div>
                                         </div>
                                     </div>
-                                    
+
                                     <!-- System Prompt Panel -->
                                     <div class="inline-panel" id="panel-prompt" style="display: none;">
                                         <div class="inline-panel-header">
@@ -527,7 +527,7 @@
                                             <small class="form-help panel-grid-full">Sent with every message to set behavior</small>
                                         </div>
                                     </div>
-                                    
+
                                     <!-- Structured Outputs Panel -->
                                     <div class="inline-panel" id="panel-structured" style="display: none;">
                                         <div class="inline-panel-header">
@@ -603,7 +603,7 @@
                                             </div>
                                         </div>
                                     </div>
-                                    
+
                                     <!-- Tool Calling Panel -->
                                     <div class="inline-panel" id="panel-tools" style="display: none;">
                                         <div class="inline-panel-header">
@@ -655,7 +655,7 @@
                                             </div>
                                         </div>
                                     </div>
-                                    
+
                                     <!-- MCP Panel -->
                                     <div class="inline-panel" id="panel-mcp" style="display: none;">
                                         <div class="inline-panel-header">
@@ -677,13 +677,13 @@
                                                 <code>pip install vllm-playground[mcp]</code>
                                                 <a href="#" id="mcp-chat-goto-config" class="link-btn">Configure MCP →</a>
                                             </div>
-                                            
+
                                             <!-- MCP Disabled View -->
                                             <div class="mcp-chat-disabled" id="mcp-chat-disabled" style="display: none;">
                                                 <p>Enable MCP to use tools from configured servers</p>
                                                 <a href="#" id="mcp-chat-goto-config-2" class="link-btn">Configure MCP Servers →</a>
                                             </div>
-                                            
+
                                             <!-- MCP Enabled View -->
                                             <div class="mcp-chat-enabled" id="mcp-chat-enabled-view" style="display: none;">
                                                 <!-- Info Tips -->
@@ -691,13 +691,13 @@
                                                     <span class="info-icon">💡</span>
                                                     <span>Start vLLM with Tool Calling enabled. Set Max Model Length to 8192+. Use a larger model with tool calling capability (e.g., Qwen 2.5 7B+, Llama 3.1 8B+) for better results.</span>
                                                 </div>
-                                                
+
                                                 <!-- No Servers Configured -->
                                                 <div class="mcp-no-servers" id="mcp-chat-no-servers" style="display: none;">
                                                     <p>No MCP servers configured</p>
                                                     <a href="#" id="mcp-chat-goto-config-3" class="link-btn">Add MCP Server →</a>
                                                 </div>
-                                                
+
                                                 <!-- Server Selection -->
                                                 <div class="mcp-server-selection" id="mcp-chat-server-selection">
                                                     <div class="selection-header">
@@ -711,7 +711,7 @@
                                                         <!-- Dynamically populated by JavaScript -->
                                                     </div>
                                                 </div>
-                                                
+
                                                 <!-- Tools Summary -->
                                                 <div class="mcp-tools-summary" id="mcp-chat-tools-summary">
                                                     <span class="tools-icon"><span class="icon-mcp-tools"></span></span>
@@ -722,7 +722,7 @@
                                             </div>
                                         </div>
                                     </div>
-                                    
+
                                     <!-- RAG Panel -->
                                     <div class="inline-panel" id="panel-rag" style="display: none;">
                                         <div class="inline-panel-header">
@@ -739,7 +739,7 @@
                                         </div>
                                     </div>
                                 </div>
-                                
+
                                 <!-- Icon Toolbar -->
                                 <div class="chat-toolbar">
                                     <div class="toolbar-icons">
@@ -780,7 +780,7 @@
                                         </select>
                                     </div>
                                 </div>
-                                
+
                                 <!-- Tool Editor Modal -->
                                 <div id="tool-editor-modal" class="tool-editor-modal" style="display: none;">
                                     <div class="tool-editor-content">
@@ -814,7 +814,7 @@
                                         </div>
                                     </div>
                                 </div>
-                                
+
                                 <!-- Parameter Template -->
                                 <template id="param-template">
                                     <div class="param-item" data-param-index="">
@@ -853,7 +853,7 @@
                                 </template>
                             </div>
                         </div>
-                        
+
                         <div class="resize-handle resize-handle-vertical" data-direction="horizontal"></div>
                     </main>
 
@@ -904,7 +904,7 @@
                         </div>
                     </aside>
                     </div>
-                    
+
                     <!-- Row 2: Server Logs (full width, collapsible) -->
                     <div class="logs-row" id="logs-row">
                         <div class="logs-row-header" id="logs-row-toggle">
@@ -987,7 +987,7 @@
                                         <small class="form-help" style="display: block; margin-top: 5px;" data-i18n="benchmark.method.help">Built-in: Fast & simple. GuideLLM: More detailed metrics & HTML reports</small>
                                     </div>
                                 </div>
-                                
+
                                 <div class="config-row">
                                     <div class="config-item">
                                         <label for="benchmark-requests" data-i18n="benchmark.config.totalRequests">Total Requests:</label>
@@ -1188,7 +1188,7 @@
                                         <span class="add-icon">+</span> Add Server
                                     </button>
                                 </div>
-                                
+
                                 <!-- Server Cards Grid -->
                                 <div class="mcp-servers-grid" id="mcp-servers-grid">
                                     <!-- Server cards will be rendered here by JavaScript -->
@@ -1365,7 +1365,7 @@
                             <div class="warning-icon"><img src="/assets/vllm-logo.svg" alt="vLLM" class="warning-logo"></div>
                             <h3>vLLM Server Not Running</h3>
                             <p>Start a vLLM server first to use Claude Code.</p>
-                            
+
                             <div class="claude-model-tip">
                                 <h4>Recommended Configuration</h4>
                                 <div class="tip-model">
@@ -1382,7 +1382,7 @@
                                 </div>
                                 <p class="tip-note">Requires vLLM v0.12.0+ for Anthropic API support. See setup tips below terminal for GPU memory guide.</p>
                             </div>
-                            
+
                             <a href="#" id="claude-goto-vllm" class="btn btn-primary">Go to vLLM Server</a>
                         </div>
 
@@ -1420,7 +1420,7 @@
                                     </ul>
                                 </div>
                             </div>
-                            
+
                             <!-- Connection Info Bar -->
                             <div class="claude-connection-bar">
                                 <div class="connection-info">
@@ -1437,16 +1437,16 @@
                                     </button>
                                 </div>
                             </div>
-                            
+
                             <!-- Terminal -->
                             <div class="claude-terminal" id="claude-terminal" tabindex="0"></div>
-                            
+
                             <!-- Help Text -->
                             <div class="claude-help-text">
                                 <p>💡 Claude Code is running with your vLLM server as the backend. Type your coding questions or requests above.</p>
                                 <p>Press <kbd>Ctrl+C</kbd> to interrupt, <kbd>Ctrl+D</kbd> to exit.</p>
                             </div>
-                            
+
                             <!-- Claude Code Setup Tips -->
                             <div class="claude-local-note">
                                 <details>
@@ -1458,19 +1458,19 @@
                                             <li><strong>Native 65K+ context</strong> - Claude Code requests 32K max_tokens, so you need at least 65K total context (32K output + input tokens)</li>
                                             <li><strong>Tool calling support</strong> - Model must support function/tool calling with appropriate parser</li>
                                         </ul>
-                                        
+
                                         <h4>Recommended Model</h4>
                                         <p><strong>Meta Llama 3.1 8B Instruct</strong> - Best balance of context, tool calling, and GPU memory:</p>
                                         <pre><code>Model: meta-llama/Llama-3.1-8B-Instruct
 Args:  --max-model-len 65536 --enable-auto-tool-choice --tool-call-parser llama3_json --gpu-memory-utilization 0.9</code></pre>
-                                        
+
                                         <h4>Why These Settings?</h4>
                                         <ul>
                                             <li><strong>Native 128K context</strong> - No rope scaling hacks needed</li>
                                             <li><strong>65536 max-model-len</strong> - Fits 32K output + 33K input on ~44GB GPU</li>
                                             <li><strong>llama3_json parser</strong> - Built-in tool calling support</li>
                                         </ul>
-                                        
+
                                         <h4>GPU Memory Guide</h4>
                                         <table class="claude-tips-table">
                                             <tr><th>GPU VRAM</th><th>Recommended Model</th><th>Max Context</th></tr>
@@ -1478,7 +1478,7 @@ Args:  --max-model-len 65536 --enable-auto-tool-choice --tool-call-parser llama3
                                             <tr><td>40-48GB (A6000)</td><td>Llama-3.1-8B-Instruct</td><td>65K</td></tr>
                                             <tr><td>80GB (A100/H100)</td><td>Llama-3.1-70B-Instruct</td><td>128K</td></tr>
                                         </table>
-                                        
+
                                         <h4>Troubleshooting</h4>
                                         <ul>
                                             <li><strong>404 on /init</strong> - Upgrade to vLLM v0.12.0+</li>
@@ -1488,7 +1488,7 @@ Args:  --max-model-len 65536 --enable-auto-tool-choice --tool-call-parser llama3
                                     </div>
                                 </details>
                             </div>
-                            
+
                             <!-- Local Terminal Note -->
                             <div class="claude-local-note">
                                 <details>
@@ -1559,11 +1559,11 @@ claude --model <span class="env-model">your-model-name</span></code></pre>
             </div>
             <div class="modal-body">
                 <p class="recipes-intro">
-                    Optimized configurations from the 
+                    Optimized configurations from the
                     <a href="https://github.com/vllm-project/recipes" target="_blank">vLLM Recipes Repository</a>.
                     Select a recipe to auto-configure the playground.
                 </p>
-                
+
                 <!-- Sync Controls -->
                 <div class="sync-controls-section">
                     <button id="sync-recipes-btn" class="btn btn-secondary btn-sm" title="Sync recipes from GitHub">
@@ -1573,12 +1573,12 @@ claude --model <span class="env-model">your-model-name</span></code></pre>
                         <span class="add-icon">+</span> Add
                     </button>
                     <div class="github-token-inline">
-                        <input type="password" id="github-token-input" class="form-control" 
+                        <input type="password" id="github-token-input" class="form-control"
                                placeholder="GitHub Token (optional, for higher rate limits)">
                         <a href="https://github.com/settings/tokens" target="_blank" class="token-help-link" title="Get a token">?</a>
                     </div>
                 </div>
-                
+
                 <!-- Search/Filter -->
                 <div class="recipes-search">
                     <input type="text" id="recipes-search-input" class="form-control" placeholder="Search models...">
@@ -1591,7 +1591,7 @@ claude --model <span class="env-model">your-model-name</span></code></pre>
                         <button class="tag-btn" data-tag="reasoning">Reasoning</button>
                     </div>
                 </div>
-                
+
                 <!-- Categories List -->
                 <div id="recipes-categories" class="recipes-categories">
                     <div class="recipes-loading">Loading recipes...</div>
@@ -1654,7 +1654,7 @@ claude --model <span class="env-model">your-model-name</span></code></pre>
     <script src="/static/js/i18n.js"></script>
     <script src="/static/js/locales/en.js"></script>
     <script src="/static/js/locales/zh-CN.js"></script>
-    
+
     <!-- Main App -->
     <script type="module" src="/static/js/app.js"></script>
 </body>

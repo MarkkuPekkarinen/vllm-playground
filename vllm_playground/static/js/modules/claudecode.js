@@ -1,9 +1,9 @@
 /**
  * Claude Code Integration Module
- * 
+ *
  * This module provides Claude Code terminal functionality for vLLM Playground.
  * It handles terminal initialization, ttyd WebSocket communication, and UI updates.
- * 
+ *
  * Usage: Import and call initClaudeCodeModule(uiInstance) to add Claude Code methods to the UI class.
  */
 
@@ -14,7 +14,7 @@
 export function initClaudeCodeModule(ui) {
     // Add Claude Code methods to the UI instance
     Object.assign(ui, ClaudeCodeMethods);
-    
+
     // Initialize Claude Code
     ui.initClaudeCode();
 }
@@ -23,14 +23,14 @@ export function initClaudeCodeModule(ui) {
  * Claude Code Methods object - contains all Claude Code-related methods
  */
 const ClaudeCodeMethods = {
-    
+
     // ============================================
     // Initialization
     // ============================================
-    
+
     initClaudeCode() {
         console.log('Initializing Claude Code module');
-        
+
         // Initialize state
         this.claudeTerminal = null;
         this.claudeWebSocket = null;
@@ -44,21 +44,21 @@ const ClaudeCodeMethods = {
             claudeInstalled: false,
             vllmRunning: false
         };
-        
+
         // Set up event listeners
         this.initClaudeCodeListeners();
-        
+
         // Check initial status
         this.checkClaudeCodeStatus();
     },
-    
+
     initClaudeCodeListeners() {
         // Install button
         const installBtn = document.getElementById('claude-install-btn');
         if (installBtn) {
             installBtn.addEventListener('click', () => this.installClaudeCode());
         }
-        
+
         // Go to vLLM server links (multiple places)
         const gotoVllm = document.getElementById('claude-goto-vllm');
         if (gotoVllm) {
@@ -67,7 +67,7 @@ const ClaudeCodeMethods = {
                 this.switchView('vllm-server');
             });
         }
-        
+
         const gotoVllmConfig = document.getElementById('claude-goto-vllm-config');
         if (gotoVllmConfig) {
             gotoVllmConfig.addEventListener('click', (e) => {
@@ -75,7 +75,7 @@ const ClaudeCodeMethods = {
                 this.switchView('vllm-server');
             });
         }
-        
+
         const gotoVllmTools = document.getElementById('claude-goto-vllm-tools');
         if (gotoVllmTools) {
             gotoVllmTools.addEventListener('click', (e) => {
@@ -83,19 +83,19 @@ const ClaudeCodeMethods = {
                 this.switchView('vllm-server');
             });
         }
-        
+
         // Reconnect button
         const reconnectBtn = document.getElementById('claude-reconnect-btn');
         if (reconnectBtn) {
             reconnectBtn.addEventListener('click', () => this.reconnectClaudeTerminal());
         }
-        
+
         // Clear button
         const clearBtn = document.getElementById('claude-clear-btn');
         if (clearBtn) {
             clearBtn.addEventListener('click', () => this.clearClaudeTerminal());
         }
-        
+
         // Handle window resize
         window.addEventListener('resize', () => {
             if (this.claudeTerminal && this.claudeFitAddon) {
@@ -103,11 +103,11 @@ const ClaudeCodeMethods = {
             }
         });
     },
-    
+
     // ============================================
     // Status Management
     // ============================================
-    
+
     async checkClaudeCodeStatus() {
         try {
             // Fetch both status and config
@@ -115,10 +115,10 @@ const ClaudeCodeMethods = {
                 fetch('/api/claude-code/status'),
                 fetch('/api/claude-code/config')
             ]);
-            
+
             const statusData = await statusResponse.json();
             const configData = await configResponse.json();
-            
+
             this.claudeStatus = {
                 ttydAvailable: statusData.ttyd_available,
                 claudeInstalled: statusData.claude_installed,
@@ -135,9 +135,9 @@ const ClaudeCodeMethods = {
                 model: configData.model,
                 port: configData.port
             };
-            
+
             this.updateClaudeCodeUI();
-            
+
         } catch (error) {
             console.error('Failed to check Claude Code status:', error);
             this.claudeStatus = {
@@ -151,7 +151,7 @@ const ClaudeCodeMethods = {
             this.updateClaudeCodeUI();
         }
     },
-    
+
     updateClaudeCodeUI() {
         const statusEl = document.getElementById('claude-status');
         const ttydWarning = document.getElementById('claude-pty-warning');  // Reuse the same element ID
@@ -160,7 +160,7 @@ const ClaudeCodeMethods = {
         const servedNameWarning = document.getElementById('claude-served-name-warning');
         const toolWarning = document.getElementById('claude-tool-warning');
         const terminalWrapper = document.getElementById('claude-terminal-wrapper');
-        
+
         // Hide all warnings first
         if (ttydWarning) ttydWarning.style.display = 'none';
         if (notInstalledWarning) notInstalledWarning.style.display = 'none';
@@ -168,18 +168,18 @@ const ClaudeCodeMethods = {
         if (servedNameWarning) servedNameWarning.style.display = 'none';
         if (toolWarning) toolWarning.style.display = 'none';
         if (terminalWrapper) terminalWrapper.style.display = 'none';
-        
+
         // Determine overall readiness
-        const isReady = this.claudeStatus.ttydAvailable && 
-                       this.claudeStatus.claudeInstalled && 
+        const isReady = this.claudeStatus.ttydAvailable &&
+                       this.claudeStatus.claudeInstalled &&
                        this.claudeStatus.vllmRunning &&
                        this.claudeStatus.configAvailable &&
                        !this.claudeStatus.needsServedModelName;
-        
+
         // Update status indicator
         if (statusEl) {
             statusEl.className = 'claude-header-status';
-            
+
             if (!this.claudeStatus.ttydAvailable) {
                 statusEl.classList.add('not-ready');
                 statusEl.innerHTML = '<span>ttyd Not Available</span>';
@@ -200,7 +200,7 @@ const ClaudeCodeMethods = {
                 statusEl.innerHTML = '<span>Ready</span>';
             }
         }
-        
+
         // Show appropriate content based on priority
         if (!this.claudeStatus.ttydAvailable) {
             if (ttydWarning) ttydWarning.style.display = 'flex';
@@ -221,24 +221,24 @@ const ClaudeCodeMethods = {
             }
         }
     },
-    
+
     // ============================================
     // Terminal Management
     // ============================================
-    
+
     initClaudeTerminal() {
         const terminalContainer = document.getElementById('claude-terminal');
         if (!terminalContainer) {
             console.error('Claude terminal container not found');
             return;
         }
-        
+
         // Check if xterm is available
         if (typeof Terminal === 'undefined') {
             console.error('xterm.js not loaded');
             return;
         }
-        
+
         // Create terminal instance
         this.claudeTerminal = new Terminal({
             cursorBlink: true,
@@ -271,44 +271,44 @@ const ClaudeCodeMethods = {
             allowTransparency: true,
             scrollback: 10000
         });
-        
+
         // Load addons
         if (typeof FitAddon !== 'undefined') {
             this.claudeFitAddon = new FitAddon.FitAddon();
             this.claudeTerminal.loadAddon(this.claudeFitAddon);
         }
-        
+
         if (typeof WebLinksAddon !== 'undefined') {
             this.claudeWebLinksAddon = new WebLinksAddon.WebLinksAddon();
             this.claudeTerminal.loadAddon(this.claudeWebLinksAddon);
         }
-        
+
         // Open terminal in container
         this.claudeTerminal.open(terminalContainer);
-        
+
         // Fit terminal to container
         this.fitClaudeTerminal();
-        
+
         // Focus terminal
         this.claudeTerminal.focus();
-        
+
         // Helper to ensure terminal is focused
         const focusTerminal = () => {
             if (this.claudeTerminal) {
                 this.claudeTerminal.focus();
             }
         };
-        
+
         // Focus terminal when clicking anywhere in terminal area
         terminalContainer.addEventListener('click', focusTerminal);
-        
+
         // Store focus helper for later use
         this.focusClaudeTerminal = focusTerminal;
-        
+
         // Connect to ttyd
         this.connectClaudeTerminal();
     },
-    
+
     fitClaudeTerminal() {
         if (this.claudeFitAddon) {
             try {
@@ -318,7 +318,7 @@ const ClaudeCodeMethods = {
             }
         }
     },
-    
+
     async connectClaudeTerminal() {
         // Dispose existing event handlers to prevent duplicates
         if (this.claudeDataDisposable) {
@@ -329,15 +329,15 @@ const ClaudeCodeMethods = {
             this.claudeResizeDisposable.dispose();
             this.claudeResizeDisposable = null;
         }
-        
+
         // Close existing connection
         if (this.claudeWebSocket) {
             this.claudeWebSocket.close();
             this.claudeWebSocket = null;
         }
-        
+
         this.claudeTerminal.writeln('\x1b[33m● Starting Claude Code terminal...\x1b[0m');
-        
+
         try {
             // Start ttyd terminal via API
             console.log('Calling /api/claude-code/start-terminal...');
@@ -347,14 +347,14 @@ const ClaudeCodeMethods = {
                     'Content-Type': 'application/json'
                 }
             });
-            
+
             const data = await response.json();
             console.log('start-terminal response:', data);
-            
+
             if (!data.success) {
                 this.claudeTerminal.writeln(`\x1b[31m✗ Failed to start terminal: ${data.error}\x1b[0m`);
                 console.error('Failed to start ttyd:', data.error);
-                
+
                 if (data.install_instructions) {
                     this.claudeTerminal.writeln('');
                     this.claudeTerminal.writeln('\x1b[33mInstall ttyd:\x1b[0m');
@@ -363,9 +363,9 @@ const ClaudeCodeMethods = {
                 }
                 return;
             }
-            
+
             this.ttydPort = data.port;
-            
+
             // Build WebSocket URL - handle both relative (/ws/ttyd) and absolute URLs
             let wsUrl = data.ws_url;
             if (wsUrl.startsWith('/')) {
@@ -373,41 +373,41 @@ const ClaudeCodeMethods = {
                 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
                 wsUrl = `${protocol}//${window.location.host}${wsUrl}`;
             }
-            
+
             this.claudeTerminal.writeln(`\x1b[32m● ttyd started on port ${data.port}\x1b[0m`);
             this.claudeTerminal.writeln('\x1b[36m● Connecting to Claude Code...\x1b[0m');
             this.claudeTerminal.writeln('');
-            
+
             console.log('Connecting to WebSocket:', wsUrl);
-            
+
             // Connect to ttyd WebSocket (via our proxy)
             this.claudeWebSocket = new WebSocket(wsUrl);
             this.claudeWebSocket.binaryType = 'arraybuffer';
-            
+
             this.claudeWebSocket.onopen = () => {
                 console.log('ttyd WebSocket connected');
-                
+
                 const encoder = new TextEncoder();
-                
+
                 // ttyd protocol: First message MUST be JSON_DATA (starts with '{')
                 // containing AuthToken to trigger process spawn
                 const authMessage = JSON.stringify({ AuthToken: "" });
                 this.claudeWebSocket.send(encoder.encode(authMessage));
                 console.log('Sent JSON auth message to ttyd:', authMessage);
-                
+
                 // Focus terminal
                 if (this.focusClaudeTerminal) this.focusClaudeTerminal();
-                
+
                 // Send resize after a small delay
                 setTimeout(() => {
                     if (this.claudeWebSocket && this.claudeWebSocket.readyState === WebSocket.OPEN) {
                         this.fitClaudeTerminal();
-                        
+
                         if (this.claudeTerminal) {
                             const cols = this.claudeTerminal.cols;
                             const rows = this.claudeTerminal.rows;
                             console.log('Sending resize to ttyd:', cols, 'x', rows);
-                            
+
                             // ttyd resize format: type byte '1' + JSON
                             const resizeData = JSON.stringify({ columns: cols, rows: rows });
                             const jsonData = encoder.encode(resizeData);
@@ -416,29 +416,29 @@ const ClaudeCodeMethods = {
                             message.set(jsonData, 1);
                             this.claudeWebSocket.send(message);
                         }
-                        
+
                         if (this.focusClaudeTerminal) this.focusClaudeTerminal();
                     }
                 }, 200);
             };
-            
+
             this.claudeWebSocket.onmessage = (event) => {
                 // ttyd sends binary data
                 if (event.data instanceof ArrayBuffer) {
                     const data = new Uint8Array(event.data);
-                    
+
                     if (data.length === 0) {
                         console.log('ttyd: empty message received');
                         return;
                     }
-                    
+
                     // ttyd protocol: first byte is ASCII character for message type
                     // '0' (48) = output, '1' (49) = set window title, '2' (50) = preferences
                     const msgType = data[0];
                     const payload = data.slice(1);
-                    
+
                     console.log('ttyd message type:', msgType, 'payload length:', payload.length);
-                    
+
                     if (msgType === 48) {  // ASCII '0' = output
                         const text = new TextDecoder().decode(payload);
                         this.claudeTerminal.write(text);
@@ -460,19 +460,19 @@ const ClaudeCodeMethods = {
                     this.claudeTerminal.write(event.data);
                 }
             };
-            
+
             this.claudeWebSocket.onclose = (event) => {
                 console.log('ttyd WebSocket closed:', event.code);
                 this.claudeTerminal.writeln('');
                 this.claudeTerminal.writeln('\x1b[33m● Connection closed\x1b[0m');
                 this.claudeWebSocket = null;
             };
-            
+
             this.claudeWebSocket.onerror = (error) => {
                 console.error('ttyd WebSocket error:', error);
                 this.claudeTerminal.writeln('\x1b[31m✗ WebSocket error\x1b[0m');
             };
-            
+
             // Handle terminal input - send to ttyd
             // Store disposable to prevent duplicate handlers on reconnect
             this.claudeDataDisposable = this.claudeTerminal.onData(data => {
@@ -487,7 +487,7 @@ const ClaudeCodeMethods = {
                     console.log('Sent input to ttyd:', data.length, 'chars');
                 }
             });
-            
+
             // Handle terminal resize - send to ttyd
             // Store disposable to prevent duplicate handlers on reconnect
             this.claudeResizeDisposable = this.claudeTerminal.onResize(({ cols, rows }) => {
@@ -503,63 +503,63 @@ const ClaudeCodeMethods = {
                     console.log('Sent resize to ttyd:', cols, 'x', rows);
                 }
             });
-            
+
             // Update connection info
             this.updateClaudeConnectionInfo({
                 port: this.claudeStatus.port,
                 model: this.claudeStatus.model
             });
-            
+
         } catch (error) {
             console.error('Failed to connect to Claude terminal:', error);
             this.claudeTerminal.writeln(`\x1b[31m✗ Connection error: ${error.message}\x1b[0m`);
         }
     },
-    
+
     updateClaudeConnectionInfo(message) {
         const endpointEl = document.getElementById('claude-endpoint');
         const modelEl = document.getElementById('claude-model-name');
-        
+
         if (endpointEl && message.port) {
             endpointEl.textContent = `http://localhost:${message.port}`;
         }
-        
+
         if (modelEl && message.model) {
             modelEl.textContent = `Model: ${message.model}`;
         }
     },
-    
+
     // ============================================
     // Actions
     // ============================================
-    
+
     async reconnectClaudeTerminal() {
         // Stop existing terminal
         await this.stopClaudeTerminal();
-        
+
         if (this.claudeTerminal) {
             this.claudeTerminal.clear();
             this.claudeTerminal.writeln('\x1b[33m● Reconnecting...\x1b[0m');
             this.claudeTerminal.writeln('');
         }
-        
+
         // Re-check status and reconnect
         await this.checkClaudeCodeStatus();
-        
-        if (this.claudeStatus.ttydAvailable && 
-            this.claudeStatus.claudeInstalled && 
+
+        if (this.claudeStatus.ttydAvailable &&
+            this.claudeStatus.claudeInstalled &&
             this.claudeStatus.vllmRunning) {
             await this.connectClaudeTerminal();
         }
     },
-    
+
     async stopClaudeTerminal() {
         // Close WebSocket
         if (this.claudeWebSocket) {
             this.claudeWebSocket.close();
             this.claudeWebSocket = null;
         }
-        
+
         // Stop ttyd via API
         try {
             await fetch('/api/claude-code/stop-terminal', {
@@ -569,20 +569,20 @@ const ClaudeCodeMethods = {
             console.error('Failed to stop terminal:', error);
         }
     },
-    
+
     clearClaudeTerminal() {
         if (this.claudeTerminal) {
             this.claudeTerminal.clear();
         }
     },
-    
+
     async installClaudeCode() {
         const installBtn = document.getElementById('claude-install-btn');
         if (installBtn) {
             installBtn.disabled = true;
             installBtn.textContent = 'Installing...';
         }
-        
+
         try {
             const response = await fetch('/api/claude-code/install', {
                 method: 'POST',
@@ -591,9 +591,9 @@ const ClaudeCodeMethods = {
                 },
                 body: JSON.stringify({ method: 'npm' })
             });
-            
+
             const data = await response.json();
-            
+
             if (data.success) {
                 this.showNotification('Claude Code installed successfully!', 'success');
                 // Re-check status
@@ -611,18 +611,18 @@ const ClaudeCodeMethods = {
             }
         }
     },
-    
+
     // ============================================
     // View Lifecycle
     // ============================================
-    
+
     onClaudeCodeViewActivated() {
         // Called when Claude Code view becomes active
         console.log('Claude Code view activated');
-        
+
         // Refresh status
         this.checkClaudeCodeStatus();
-        
+
         // Fit terminal and focus if exists
         if (this.claudeTerminal) {
             setTimeout(() => {
@@ -638,16 +638,16 @@ const ClaudeCodeMethods = {
             }, 100);
         }
     },
-    
+
     onClaudeCodeViewDeactivated() {
         // Called when Claude Code view is hidden
         console.log('Claude Code view deactivated');
     },
-    
+
     // ============================================
     // Cleanup
     // ============================================
-    
+
     async cleanupClaudeCode() {
         // Dispose event handlers
         if (this.claudeDataDisposable) {
@@ -658,10 +658,10 @@ const ClaudeCodeMethods = {
             this.claudeResizeDisposable.dispose();
             this.claudeResizeDisposable = null;
         }
-        
+
         // Stop terminal
         await this.stopClaudeTerminal();
-        
+
         // Dispose terminal
         if (this.claudeTerminal) {
             this.claudeTerminal.dispose();

@@ -500,15 +500,15 @@
     .metrics-grid {
         grid-template-columns: repeat(2, 1fr);
     }
-    
+
     .config-row {
         grid-template-columns: 1fr;
     }
-    
+
     .metric-value {
         font-size: 1.5rem;
     }
-    
+
     .table-container {
         grid-template-columns: 1fr;
     }
@@ -582,4 +582,3 @@
 [data-theme="light"] .icon-guidellm {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230f172a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 20V10'/%3E%3Cpath d='M18 20V4'/%3E%3Cpath d='M6 20v-4'/%3E%3C/svg%3E");
 }
-

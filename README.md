@@ -256,7 +256,7 @@ Apache 2.0 License - See [LICENSE](LICENSE) file for details.
 
 ## 🤝 Contributing
 
-Contributions welcome! Please feel free to submit issues and pull requests.
+Contributions welcome! Please see **[CONTRIBUTING.md](CONTRIBUTING.md)** for setup instructions and guidelines.
 
 ---
 

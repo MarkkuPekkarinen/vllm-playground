@@ -14,7 +14,7 @@ const zhCN = {
         collapseSidebar: '收起侧边栏',
         expandSidebar: '展开侧边栏'
     },
-    
+
     // Header
     header: {
         viewTitle: {
@@ -22,7 +22,7 @@ const zhCN = {
             guidellm: 'GuideLLM 基准测试'
         }
     },
-    
+
     // Status messages
     status: {
         connected: '已连接',
@@ -34,7 +34,7 @@ const zhCN = {
         offline: '离线',
         online: '在线'
     },
-    
+
     // Server Configuration Panel
     serverConfig: {
         title: '⚙️ 服务器配置',
@@ -180,7 +180,7 @@ const zhCN = {
             stop: '停止服务器'
         }
     },
-    
+
     // Chat Interface
     chat: {
         title: '💬 聊天界面',
@@ -332,7 +332,7 @@ const zhCN = {
             }
         }
     },
-    
+
     // Metrics Panel
     metrics: {
         title: '📊 响应指标',
@@ -353,7 +353,7 @@ const zhCN = {
         gpuKvCacheUsage: 'GPU KV 缓存使用率：',
         prefixCacheHitRate: '前缀缓存命中率：'
     },
-    
+
     // Logs Panel
     logs: {
         title: '📋 服务器日志',
@@ -368,7 +368,7 @@ const zhCN = {
             success: '成功'
         }
     },
-    
+
     // Server messages
     server: {
         starting: '启动 vLLM 服务器中...',
@@ -387,7 +387,7 @@ const zhCN = {
             stoppedDesc: '配置并启动服务器以开始使用'
         }
     },
-    
+
     // GuideLLM Benchmark View
     guidellm: {
         title: '📊 GuideLLM 基准测试',
@@ -423,7 +423,7 @@ const zhCN = {
             p99: 'P99'
         }
     },
-    
+
     // Tool Editor Modal
     toolEditor: {
         title: {
@@ -447,7 +447,7 @@ const zhCN = {
             cancel: '取消'
         }
     },
-    
+
     // MCP Server Editor Modal
     mcpEditor: {
         title: {
@@ -467,7 +467,7 @@ const zhCN = {
             cancel: '取消'
         }
     },
-    
+
     // Log messages
     log: {
         connected: 'WebSocket 已连接',
@@ -477,7 +477,7 @@ const zhCN = {
         info: '信息',
         success: '成功'
     },
-    
+
     // Validation messages
     validation: {
         required: '此字段为必填项',
@@ -489,7 +489,7 @@ const zhCN = {
         invalidJson: 'JSON 无效',
         invalidRegex: '正则表达式无效'
     },
-    
+
     // Benchmark messages
     benchmark: {
         title: '性能基准测试',
@@ -522,7 +522,7 @@ const zhCN = {
             help: '此基准测试配置对应的 GuideLLM 命令'
         }
     },
-    
+
     // Tool messages
     tool: {
         added: '工具已添加',
@@ -534,7 +534,7 @@ const zhCN = {
         deleteConfirm: '确定要删除此工具吗？',
         clearAllConfirm: '确定要清空所有工具吗？'
     },
-    
+
     // File operations
     file: {
         uploading: '上传中...',
@@ -544,7 +544,7 @@ const zhCN = {
         downloaded: '已下载',
         deleteConfirm: '确定要删除此文件吗？'
     },
-    
+
     // Common actions
     action: {
         save: '保存',
@@ -568,7 +568,7 @@ const zhCN = {
         upload: '上传',
         download: '下载'
     },
-    
+
     // Error messages
     error: {
         unknown: '发生未知错误',
@@ -580,7 +580,7 @@ const zhCN = {
         forbidden: '访问被禁止',
         unauthorized: '未授权'
     },
-    
+
     // Time-related
     time: {
         justNow: '刚刚',
@@ -593,7 +593,7 @@ const zhCN = {
         hours: '小时',
         days: '天'
     },
-    
+
     // Units
     units: {
         tokens: '令牌',
@@ -607,21 +607,21 @@ const zhCN = {
         per: '/',
         percentage: '%'
     },
-    
+
     // Theme
     theme: {
         toggle: '切换暗色/亮色模式',
         dark: '深色',
         light: '浅色'
     },
-    
+
     // Language
     language: {
         switch: '切换语言',
         english: 'English',
         chinese: '简体中文'
     },
-    
+
     // MCP Configuration View (Model Context Protocol)
     mcp: {
         nav: 'MCP 服务器',
@@ -690,14 +690,14 @@ const zhCN = {
         disconnected: '已断开',
         error: '错误'
     },
-    
+
     // Container Runtime
     containerRuntime: {
         checking: '检测中...',
         detected: '容器运行时',
         notDetected: '未检测到容器运行时'
     },
-    
+
     // Confirm Modal
     confirmModal: {
         title: '确认操作',
@@ -711,4 +711,3 @@ const zhCN = {
 if (window.i18n) {
     window.i18n.register('zh-CN', zhCN);
 }
-
