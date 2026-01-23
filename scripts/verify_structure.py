@@ -23,7 +23,7 @@ PKG_DIR = ROOT_DIR / "vllm_playground"
 # Files/directories that should NOT exist at root (they belong in vllm_playground/)
 FORBIDDEN_AT_ROOT = [
     "app.py",
-    "container_manager.py", 
+    "container_manager.py",
     "index.html",
     "benchmarks.json",
     "static",
@@ -61,7 +61,7 @@ ALLOWED_AT_ROOT = [
 def check_structure(fix: bool = False) -> bool:
     """
     Check that no forbidden files exist at root.
-    
+
     Returns:
         True if structure is valid, False otherwise
     """
@@ -72,9 +72,9 @@ def check_structure(fix: bool = False) -> bool:
     print(f"Package: {PKG_DIR}")
     print("=" * 60)
     print()
-    
+
     issues_found = []
-    
+
     for item in FORBIDDEN_AT_ROOT:
         path = ROOT_DIR / item
         if path.exists():
@@ -86,9 +86,10 @@ def check_structure(fix: bool = False) -> bool:
                     print(f"   🗑️  Deleted: {item}")
                 else:
                     import shutil
+
                     shutil.rmtree(path)
                     print(f"   🗑️  Deleted directory: {item}/")
-    
+
     if not issues_found:
         print("✅ Structure is valid - all source code is in vllm_playground/")
         print()
@@ -114,16 +115,10 @@ def check_structure(fix: bool = False) -> bool:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Verify single-source-of-truth project structure"
-    )
-    parser.add_argument(
-        '--fix', 
-        action='store_true', 
-        help="Remove duplicate files found at root"
-    )
+    parser = argparse.ArgumentParser(description="Verify single-source-of-truth project structure")
+    parser.add_argument("--fix", action="store_true", help="Remove duplicate files found at root")
     args = parser.parse_args()
-    
+
     valid = check_structure(fix=args.fix)
     sys.exit(0 if valid else 1)
 

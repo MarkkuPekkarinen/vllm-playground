@@ -26,43 +26,43 @@
     --primary-color: #0ea5e9;
     --primary-hover: #0284c7;
     --primary-light: rgba(14, 165, 233, 0.1);
-    
+
     /* Status colors */
     --danger-color: #ef4444;
     --danger-hover: #dc2626;
     --success-color: #10b981;
     --warning-color: #f59e0b;
-    
+
     /* Backgrounds - clean whites and grays from vllm.ai */
     --bg-primary: #f8fafc;
     --bg-secondary: #ffffff;
     --bg-tertiary: #f1f5f9;
-    
+
     /* Text - high contrast dark text */
     --text-primary: #0f172a;
     --text-secondary: #64748b;
     --text-muted: #94a3b8;
-    
+
     /* Borders and shadows */
     --border-color: #e2e8f0;
     --border-light: #f1f5f9;
     --shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
     --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
     --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
-    
+
     /* Gradients */
     --bg-gradient-start: #ffffff;
     --bg-gradient-end: #f8fafc;
-    
+
     /* Inputs */
     --input-bg: #ffffff;
     --input-border: #e2e8f0;
     --input-focus-ring: rgba(14, 165, 233, 0.3);
-    
+
     /* Hover states */
     --hover-overlay: rgba(14, 165, 233, 0.04);
     --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-    
+
     /* Accent - vLLM orange/amber */
     --accent-color: #f59e0b;
     --accent-hover: #d97706;
@@ -625,32 +625,32 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     .nav-sidebar:not(.expanded) {
         width: 60px;
     }
-    
+
     .nav-sidebar:not(.expanded) .nav-title,
     .nav-sidebar:not(.expanded) .nav-label,
     .nav-sidebar:not(.expanded) .nav-badge {
         display: none;
     }
-    
+
     .nav-sidebar:not(.expanded) .nav-status-text,
     .nav-sidebar:not(.expanded) .nav-version {
         display: none;
     }
-    
+
     .nav-sidebar:not(.expanded) .nav-item {
         justify-content: center;
         padding: 10px;
     }
-    
+
     .nav-sidebar:not(.expanded) .nav-status {
         justify-content: center;
         padding: 8px;
     }
-    
+
     .nav-sidebar:not(.expanded) ~ .nav-resize-handle {
         left: 60px;
     }
-    
+
     .nav-sidebar:not(.expanded) ~ .app-container {
         margin-left: 60px;
     }
@@ -1264,7 +1264,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
         width: 350px;
         min-width: 260px;
     }
-    
+
     .metrics-section {
         width: 250px;
         min-width: 200px;
@@ -1276,7 +1276,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
         width: 320px;
         min-width: 240px;
     }
-    
+
     .metrics-section {
         width: 220px;
         min-width: 180px;
@@ -1288,12 +1288,12 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
         width: 280px;
         min-width: 220px;
     }
-    
+
     .metrics-section {
         width: 200px;
         min-width: 160px;
     }
-    
+
     .panel {
         padding: 20px;
     }
@@ -1304,7 +1304,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
         flex-direction: column;
         overflow-y: auto;
     }
-    
+
     .sidebar,
     .chat-section,
     .logs-section {
@@ -1312,12 +1312,12 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
         min-width: 100% !important;
         flex: 0 0 auto;
     }
-    
+
     .panel {
         min-height: 400px;
         max-height: none;
     }
-    
+
     .chat-section .panel {
         min-height: 500px;
     }
@@ -2555,55 +2555,55 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     .container {
         padding: 10px;
     }
-    
+
     .header {
         padding: 15px 20px;
         margin-bottom: 15px;
     }
-    
+
     .header h1 {
         font-size: 1.5rem;
     }
-    
+
     .form-row {
         grid-template-columns: 1fr;
     }
-    
+
     .generation-params {
         grid-template-columns: 1fr;
     }
-    
+
     .chat-message.user .message-content,
     .chat-message.assistant .message-content {
         max-width: 90%;
     }
-    
+
     .chat-message .message-avatar {
         width: 28px;
         height: 28px;
         font-size: 12px;
     }
-    
+
     .panel {
         padding: 15px;
         margin: 0 5px;
     }
-    
+
     .chat-metrics-grid {
         grid-template-columns: repeat(2, 1fr);
         gap: 10px;
     }
-    
+
     .chat-metric-item {
         padding: 12px;
         min-height: 75px;
     }
-    
+
     .chat-metric-item .metric-label {
         font-size: 0.65rem;
         margin-bottom: 6px;
     }
-    
+
     .chat-metric-item .metric-value {
         font-size: 1.1rem;
     }
@@ -3805,38 +3805,38 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
         width: 95%;
         max-height: 90vh;
     }
-    
+
     .recipe-header {
         flex-direction: column;
     }
-    
+
     .recipe-hardware {
         flex-direction: column;
         gap: 8px;
     }
-    
+
     .recipe-actions {
         flex-direction: column;
     }
-    
+
     .recipe-actions .btn {
         width: 100%;
         text-align: center;
     }
-    
+
     .edit-recipe-modal-content {
         max-width: 95%;
     }
-    
+
     .edit-form-section .form-row {
         grid-template-columns: 1fr;
     }
-    
+
     .checkbox-row {
         flex-direction: column;
         gap: 10px;
     }
-    
+
     .sync-controls-section {
         flex-wrap: wrap;
     }
@@ -4224,7 +4224,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    box-shadow: 
+    box-shadow:
         0 0 0 1px rgba(255, 255, 255, 0.1),
         0 25px 60px rgba(0, 0, 0, 0.5),
         0 10px 30px rgba(0, 0, 0, 0.3);
@@ -4691,25 +4691,25 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
         flex-direction: column;
         align-items: stretch;
     }
-    
+
     .tool-choice-row .form-group {
         margin-left: 0 !important;
     }
-    
+
     .tool-presets-row {
         flex-direction: column;
         align-items: flex-start;
     }
-    
+
     .preset-buttons {
         width: 100%;
     }
-    
+
     .tool-item {
         flex-direction: column;
         align-items: flex-start;
     }
-    
+
     .tool-item-actions {
         margin-left: 0;
         margin-top: 8px;
@@ -4739,7 +4739,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     background: var(--bg-secondary);
     border-radius: 12px;
     border-left: 4px solid var(--primary-color);
-    box-shadow: 
+    box-shadow:
         0 10px 40px rgba(0, 0, 0, 0.4),
         0 0 0 1px rgba(255, 255, 255, 0.05);
     backdrop-filter: blur(10px);
@@ -4897,7 +4897,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
         right: 16px;
         bottom: 16px;
     }
-    
+
     .toast {
         min-width: 0;
         max-width: none;
@@ -6196,11 +6196,11 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     .language-label {
         display: none;
     }
-    
+
     .language-selector-btn {
         padding: 8px 10px;
     }
-    
+
     .language-dropdown {
         min-width: 160px;
     }
@@ -6221,4 +6221,3 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 .language-dropdown.show {
     animation: fadeInDown 0.2s ease;
 }
-

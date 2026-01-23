@@ -10,22 +10,22 @@
 export function initGuideLLMModule(ui) {
     // Store reference to UI
     GuideLLMModule.ui = ui;
-    
+
     // Inject methods into UI class
     injectMethods(ui);
-    
+
     // Use already-fetched availability from UI (set in checkFeatureAvailability)
     GuideLLMModule.available = ui.guidellmAvailable;
-    
+
     // Update status indicator with the already-known state
     GuideLLMModule.updateStatusIndicator();
-    
+
     // Setup benchmark event listeners
     GuideLLMModule.setupBenchmarkListeners();
-    
+
     // Initialize benchmark command preview
     ui.updateBenchmarkCommandPreview();
-    
+
     console.log('GuideLLM module initialized');
 }
 
@@ -40,16 +40,16 @@ function injectMethods(ui) {
     ui.displayBenchmarkResults = GuideLLMModule.displayBenchmarkResults.bind(GuideLLMModule);
     ui.displayBenchmarkTable = GuideLLMModule.displayBenchmarkTable.bind(GuideLLMModule);
     ui.resetBenchmarkUI = GuideLLMModule.resetBenchmarkUI.bind(GuideLLMModule);
-    
+
     // Benchmark server status
     ui.updateBenchmarkServerStatus = GuideLLMModule.updateBenchmarkServerStatus.bind(GuideLLMModule);
-    
+
     // Command preview and copy methods
     ui.updateBenchmarkCommandPreview = GuideLLMModule.updateBenchmarkCommandPreview.bind(GuideLLMModule);
     ui.copyBenchmarkCommand = GuideLLMModule.copyBenchmarkCommand.bind(GuideLLMModule);
     ui.copyGuidellmOutput = GuideLLMModule.copyGuidellmOutput.bind(GuideLLMModule);
     ui.copyGuidellmJson = GuideLLMModule.copyGuidellmJson.bind(GuideLLMModule);
-    
+
     // Toggle methods
     ui.toggleRawOutput = GuideLLMModule.toggleRawOutput.bind(GuideLLMModule);
     ui.toggleJsonOutput = GuideLLMModule.toggleJsonOutput.bind(GuideLLMModule);
@@ -62,18 +62,18 @@ export const GuideLLMModule = {
     ui: null,
     available: false,
     version: null,
-    
+
     // =========================================================================
     // Status Indicator
     // =========================================================================
-    
+
     initStatusIndicator() {
         const statusContainer = document.getElementById('guidellm-status');
         if (!statusContainer) {
             console.warn('GuideLLM status container not found');
             return;
         }
-        
+
         statusContainer.innerHTML = `
             <span class="icon-guidellm"></span>
             <span class="status-dot"></span>
@@ -81,18 +81,18 @@ export const GuideLLMModule = {
         `;
         statusContainer.className = 'guidellm-status-indicator';
     },
-    
+
     async checkAvailability() {
         try {
             const response = await fetch('/api/features');
             if (!response.ok) throw new Error('Failed to fetch features');
-            
+
             const data = await response.json();
             this.available = data.guidellm_available || false;
             this.version = data.guidellm_version || null;
-            
+
             this.updateStatusIndicator();
-            
+
             if (this.ui) {
                 this.ui.guidellmAvailable = this.available;
             }
@@ -102,18 +102,18 @@ export const GuideLLMModule = {
             this.updateStatusIndicator();
         }
     },
-    
+
     updateStatusIndicator() {
         const statusContainer = document.getElementById('guidellm-status');
         const installWarning = document.getElementById('guidellm-install-warning');
         const metricsContent = document.getElementById('metrics-section-content');
-        
+
         if (this.available) {
             // Update status indicator
             if (statusContainer) {
                 statusContainer.className = 'guidellm-status-indicator available';
                 statusContainer.innerHTML = '<span>✅ GuideLLM Ready</span>';
-                statusContainer.title = this.version 
+                statusContainer.title = this.version
                     ? `GuideLLM v${this.version} installed`
                     : 'GuideLLM installed and ready';
             }
@@ -132,15 +132,15 @@ export const GuideLLMModule = {
             if (metricsContent) metricsContent.style.display = 'block';
         }
     },
-    
+
     // =========================================================================
     // Event Listeners Setup
     // =========================================================================
-    
+
     setupBenchmarkListeners() {
         const ui = this.ui;
         if (!ui || !ui.elements) return;
-        
+
         // Run/Stop buttons
         if (ui.elements.runBenchmarkBtn) {
             ui.elements.runBenchmarkBtn.addEventListener('click', () => ui.runBenchmark());
@@ -148,7 +148,7 @@ export const GuideLLMModule = {
         if (ui.elements.stopBenchmarkBtn) {
             ui.elements.stopBenchmarkBtn.addEventListener('click', () => ui.stopBenchmark());
         }
-        
+
         // Benchmark config changes - update command preview
         const benchmarkConfigElements = [
             ui.elements.benchmarkRequests,
@@ -158,12 +158,12 @@ export const GuideLLMModule = {
             ui.elements.host,
             ui.elements.port
         ].filter(el => el);
-        
+
         benchmarkConfigElements.forEach(element => {
             element.addEventListener('input', () => ui.updateBenchmarkCommandPreview());
             element.addEventListener('change', () => ui.updateBenchmarkCommandPreview());
         });
-        
+
         // Benchmark method toggle
         if (ui.elements.benchmarkMethodBuiltin) {
             ui.elements.benchmarkMethodBuiltin.addEventListener('change', () => ui.updateBenchmarkCommandPreview());
@@ -171,7 +171,7 @@ export const GuideLLMModule = {
         if (ui.elements.benchmarkMethodGuidellm) {
             ui.elements.benchmarkMethodGuidellm.addEventListener('change', () => ui.updateBenchmarkCommandPreview());
         }
-        
+
         // Copy buttons
         if (ui.elements.copyBenchmarkCommandBtn) {
             ui.elements.copyBenchmarkCommandBtn.addEventListener('click', () => ui.copyBenchmarkCommand());
@@ -182,7 +182,7 @@ export const GuideLLMModule = {
         if (ui.elements.copyGuidellmJsonBtn) {
             ui.elements.copyGuidellmJsonBtn.addEventListener('click', () => ui.copyGuidellmJson());
         }
-        
+
         // Toggle buttons
         if (ui.elements.toggleRawOutputBtn) {
             ui.elements.toggleRawOutputBtn.addEventListener('click', () => ui.toggleRawOutput());
@@ -191,16 +191,16 @@ export const GuideLLMModule = {
             ui.elements.toggleJsonOutputBtn.addEventListener('click', () => ui.toggleJsonOutput());
         }
     },
-    
+
     // =========================================================================
     // Benchmark Server Status
     // =========================================================================
-    
+
     updateBenchmarkServerStatus() {
         const ui = this.ui;
         const statusBanner = document.getElementById('benchmark-server-status');
         if (!statusBanner) return;
-        
+
         if (ui.serverRunning && ui.serverReady) {
             statusBanner.classList.add('connected');
             statusBanner.innerHTML = `
@@ -228,14 +228,14 @@ export const GuideLLMModule = {
             `;
         }
     },
-    
+
     // =========================================================================
     // Benchmark Execution
     // =========================================================================
-    
+
     async runBenchmark() {
         const ui = this.ui;
-        
+
         if (!ui.serverRunning) {
             ui.showNotification('Server must be running to benchmark', 'warning');
             return;
@@ -285,7 +285,7 @@ export const GuideLLMModule = {
 
     async stopBenchmark() {
         const ui = this.ui;
-        
+
         try {
             await fetch('/api/benchmark/stop', {method: 'POST'});
             ui.showNotification('Benchmark stopped', 'info');
@@ -297,18 +297,18 @@ export const GuideLLMModule = {
 
     async pollBenchmarkStatus() {
         const ui = this.ui;
-        
+
         try {
             const response = await fetch('/api/benchmark/status');
             const data = await response.json();
-            
+
             console.log('[POLL] Benchmark status:', data);
 
             if (data.running) {
                 // GuideLLM doesn't output real-time progress, so we estimate based on time
                 const elapsed = Date.now() - ui.benchmarkStartTime;
                 const estimated = (ui.elements.benchmarkRequests.value / ui.elements.benchmarkRate.value) * 1000;
-                
+
                 let progress;
                 if (elapsed < estimated) {
                     progress = (elapsed / estimated) * 90;
@@ -317,7 +317,7 @@ export const GuideLLMModule = {
                     const slowProgress = 90 + (Math.min(overtime / estimated, 1) * 8);
                     progress = Math.min(98, slowProgress);
                 }
-                
+
                 ui.elements.progressFill.style.width = `${progress}%`;
                 ui.elements.progressPercent.textContent = `${progress.toFixed(0)}%`;
             } else {
@@ -343,7 +343,7 @@ export const GuideLLMModule = {
 
     resetBenchmarkUI() {
         const ui = this.ui;
-        
+
         ui.benchmarkRunning = false;
         ui.elements.runBenchmarkBtn.disabled = !ui.serverRunning;
         ui.elements.runBenchmarkBtn.style.display = 'inline-block';
@@ -351,23 +351,23 @@ export const GuideLLMModule = {
         ui.elements.stopBenchmarkBtn.style.display = 'none';
         ui.elements.progressFill.style.width = '0%';
         ui.elements.progressPercent.textContent = '0%';
-        
+
         if (ui.benchmarkPollInterval) {
             clearInterval(ui.benchmarkPollInterval);
             ui.benchmarkPollInterval = null;
         }
     },
-    
+
     // =========================================================================
     // Results Display
     // =========================================================================
 
     displayBenchmarkResults(results) {
         const ui = this.ui;
-        
+
         // Hide progress
         ui.elements.benchmarkProgress.style.display = 'none';
-        
+
         const isGuideLLM = results.raw_output && results.raw_output.length > 0;
 
         console.log('=== BENCHMARK RESULTS DEBUG ===');
@@ -383,31 +383,31 @@ export const GuideLLMModule = {
             const toggleBtn = ui.elements.toggleRawOutputBtn;
             const jsonOutputSection = document.getElementById('guidellm-json-output-section');
             const jsonOutputPre = document.getElementById('guidellm-json-output');
-            
+
             if (rawOutputSection && rawOutputTextarea) {
                 rawOutputTextarea.value = results.raw_output;
                 rawOutputSection.style.display = 'block';
                 if (rawOutputContent) rawOutputContent.style.display = 'block';
                 if (toggleBtn) toggleBtn.textContent = 'Hide';
             }
-            
+
             // Try to extract and display JSON from results
             if (results.json_output) {
                 try {
-                    const jsonData = typeof results.json_output === 'string' 
-                        ? JSON.parse(results.json_output) 
+                    const jsonData = typeof results.json_output === 'string'
+                        ? JSON.parse(results.json_output)
                         : results.json_output;
-                    
+
                     if (jsonOutputSection && jsonOutputPre) {
                         jsonOutputPre.textContent = JSON.stringify(jsonData, null, 2);
                         jsonOutputSection.style.display = 'block';
-                        
+
                         const jsonOutputContent = ui.elements.guidellmJsonOutputContent;
                         const toggleJsonBtn = ui.elements.toggleJsonOutputBtn;
                         if (jsonOutputContent) jsonOutputContent.style.display = 'block';
                         if (toggleJsonBtn) toggleJsonBtn.textContent = 'Hide';
                     }
-                    
+
                     // Create table view
                     this.displayBenchmarkTable(jsonData);
                 } catch (e) {
@@ -423,27 +423,27 @@ export const GuideLLMModule = {
             const rawOutputSection = document.getElementById('guidellm-raw-output-section');
             const jsonOutputSection = document.getElementById('guidellm-json-output-section');
             const tableSection = document.getElementById('guidellm-table-section');
-            
+
             if (rawOutputSection) rawOutputSection.style.display = 'none';
             if (jsonOutputSection) jsonOutputSection.style.display = 'none';
             if (tableSection) tableSection.style.display = 'none';
 
             // Update metric cards
-            document.getElementById('metric-throughput').textContent = 
+            document.getElementById('metric-throughput').textContent =
                 results.throughput !== undefined ? `${results.throughput.toFixed(2)} req/s` : '-- req/s';
-            document.getElementById('metric-latency').textContent = 
+            document.getElementById('metric-latency').textContent =
                 results.avg_latency !== undefined ? `${results.avg_latency.toFixed(2)} ms` : '-- ms';
-            document.getElementById('benchmark-tokens-per-sec').textContent = 
+            document.getElementById('benchmark-tokens-per-sec').textContent =
                 results.tokens_per_second !== undefined ? `${results.tokens_per_second.toFixed(2)} tok/s` : '-- tok/s';
-            document.getElementById('metric-p50').textContent = 
+            document.getElementById('metric-p50').textContent =
                 results.p50_latency !== undefined ? `${results.p50_latency.toFixed(2)} ms` : '-- ms';
-            document.getElementById('metric-p95').textContent = 
+            document.getElementById('metric-p95').textContent =
                 results.p95_latency !== undefined ? `${results.p95_latency.toFixed(2)} ms` : '-- ms';
-            document.getElementById('metric-p99').textContent = 
+            document.getElementById('metric-p99').textContent =
                 results.p99_latency !== undefined ? `${results.p99_latency.toFixed(2)} ms` : '-- ms';
-            document.getElementById('benchmark-total-tokens').textContent = 
+            document.getElementById('benchmark-total-tokens').textContent =
                 results.total_tokens !== undefined ? results.total_tokens.toLocaleString() : '--';
-            document.getElementById('metric-success-rate').textContent = 
+            document.getElementById('metric-success-rate').textContent =
                 results.success_rate !== undefined ? `${results.success_rate.toFixed(1)} %` : '-- %';
 
             // Animate cards
@@ -459,22 +459,22 @@ export const GuideLLMModule = {
     displayBenchmarkTable(jsonData) {
         const tableSection = document.getElementById('guidellm-table-section');
         const tableContent = document.getElementById('guidellm-table-content');
-        
+
         if (!tableSection || !tableContent) return;
-        
+
         if (!jsonData || !jsonData.benchmarks || jsonData.benchmarks.length === 0) {
             console.warn('[TABLE] No benchmark data in JSON');
             return;
         }
-        
+
         const benchmark = jsonData.benchmarks[0];
         let html = '';
-        
+
         // Configuration Table
         html += '<div class="benchmark-table-group">';
         html += '<h4>⚙️ Configuration</h4>';
         html += '<table class="benchmark-data-table"><tbody>';
-        
+
         if (benchmark.worker) {
             html += `<tr><td class="label">Backend Target</td><td class="value">${benchmark.worker.backend_target || 'N/A'}</td></tr>`;
             html += `<tr><td class="label">Model</td><td class="value">${benchmark.worker.backend_model || 'N/A'}</td></tr>`;
@@ -490,28 +490,28 @@ export const GuideLLMModule = {
             html += `<tr><td class="label">Max Requests</td><td class="value">${benchmark.args.max_number || 'N/A'}</td></tr>`;
         }
         html += '</tbody></table></div>';
-        
+
         // Request Statistics Table
         if (benchmark.run_stats) {
             const stats = benchmark.run_stats;
             const duration = stats.end_time - stats.start_time;
-            
+
             html += '<div class="benchmark-table-group">';
             html += '<h4>📊 Request Statistics</h4>';
             html += '<table class="benchmark-data-table"><tbody>';
-            
+
             if (stats.requests_made) {
                 html += `<tr><td class="label">Total Requests</td><td class="value">${stats.requests_made.total || 0}</td></tr>`;
                 html += `<tr><td class="label">Successful</td><td class="value success">${stats.requests_made.successful || 0}</td></tr>`;
                 html += `<tr><td class="label">Errored</td><td class="value ${stats.requests_made.errored > 0 ? 'error' : ''}">${stats.requests_made.errored || 0}</td></tr>`;
                 html += `<tr><td class="label">Incomplete</td><td class="value">${stats.requests_made.incomplete || 0}</td></tr>`;
             }
-            
+
             html += `<tr><td class="label">Duration</td><td class="value">${duration.toFixed(2)} seconds</td></tr>`;
             html += `<tr><td class="label">Avg Request Time</td><td class="value">${(stats.request_time_avg || 0).toFixed(3)} seconds</td></tr>`;
             html += '</tbody></table></div>';
         }
-        
+
         // Performance Metrics Table
         if (benchmark.metrics) {
             html += '<div class="benchmark-table-group">';
@@ -519,7 +519,7 @@ export const GuideLLMModule = {
             html += '<table class="benchmark-data-table">';
             html += '<thead><tr><th>Metric</th><th>Mean</th><th>Median</th><th>Min</th><th>Max</th></tr></thead>';
             html += '<tbody>';
-            
+
             if (benchmark.metrics.requests_per_second?.successful) {
                 const rps = benchmark.metrics.requests_per_second.successful;
                 html += `<tr><td class="label">Requests/Second</td><td>${(rps.mean || 0).toFixed(2)}</td><td>${(rps.median || 0).toFixed(2)}</td><td>${(rps.min || 0).toFixed(2)}</td><td>${(rps.max || 0).toFixed(2)}</td></tr>`;
@@ -534,13 +534,13 @@ export const GuideLLMModule = {
             }
             html += '</tbody></table></div>';
         }
-        
+
         // Token Statistics Table
         if (benchmark.metrics) {
             html += '<div class="benchmark-table-group">';
             html += '<h4>📝 Token Statistics</h4>';
             html += '<table class="benchmark-data-table"><tbody>';
-            
+
             if (benchmark.metrics.output_tokens_per_second?.successful) {
                 const otps = benchmark.metrics.output_tokens_per_second.successful;
                 html += `<tr><td class="label">Output Tokens/Second (Mean)</td><td class="value">${(otps.mean || 0).toFixed(2)}</td></tr>`;
@@ -551,7 +551,7 @@ export const GuideLLMModule = {
             }
             html += '</tbody></table></div>';
         }
-        
+
         // Latency Percentiles Table
         if (benchmark.metrics?.request_latency?.successful?.percentiles) {
             const latency = benchmark.metrics.request_latency.successful;
@@ -560,7 +560,7 @@ export const GuideLLMModule = {
             html += '<table class="benchmark-data-table">';
             html += '<thead><tr><th>Percentile</th><th>Latency (s)</th><th>Latency (ms)</th></tr></thead>';
             html += '<tbody>';
-            
+
             const percentiles = [
                 { name: 'P50', key: 'p50' },
                 { name: 'P75', key: 'p75' },
@@ -568,7 +568,7 @@ export const GuideLLMModule = {
                 { name: 'P95', key: 'p95' },
                 { name: 'P99', key: 'p99' }
             ];
-            
+
             percentiles.forEach(p => {
                 if (latency.percentiles[p.key] !== undefined) {
                     const val = latency.percentiles[p.key];
@@ -577,11 +577,11 @@ export const GuideLLMModule = {
             });
             html += '</tbody></table></div>';
         }
-        
+
         tableContent.innerHTML = html;
         tableSection.style.display = 'block';
     },
-    
+
     // =========================================================================
     // Command Preview
     // =========================================================================
@@ -589,31 +589,31 @@ export const GuideLLMModule = {
     updateBenchmarkCommandPreview() {
         const ui = this.ui;
         if (!ui.elements.benchmarkRequests) return;
-        
+
         const totalRequests = ui.elements.benchmarkRequests.value || '100';
         const requestRate = ui.elements.benchmarkRate.value || '5';
         const promptTokens = ui.elements.benchmarkPromptTokens.value || '100';
         const outputTokens = ui.elements.benchmarkOutputTokens.value || '100';
         const useGuideLLM = ui.elements.benchmarkMethodGuidellm?.checked;
-        
+
         const host = ui.elements.host?.value || 'localhost';
         const port = ui.elements.port?.value || '8000';
         const targetUrl = `http://${host}:${port}/v1`;
-        
+
         let cmd = '';
-        
+
         if (useGuideLLM) {
             cmd = '# Benchmark using GuideLLM\n';
             cmd += 'guidellm benchmark';
             cmd += ` \\\n  --target "${targetUrl}"`;
-            
+
             if (requestRate && requestRate > 0) {
                 cmd += ` \\\n  --rate-type constant`;
                 cmd += ` \\\n  --rate ${requestRate}`;
             } else {
                 cmd += ` \\\n  --rate-type sweep`;
             }
-            
+
             cmd += ` \\\n  --max-requests ${totalRequests}`;
             cmd += ` \\\n  --data "prompt_tokens=${promptTokens},output_tokens=${outputTokens}"`;
         } else {
@@ -630,12 +630,12 @@ export const GuideLLMModule = {
             cmd += `    url = "${targetUrl}/chat/completions"\n`;
             cmd += '    # Send requests at specified rate...';
         }
-        
+
         if (ui.elements.benchmarkCommandText) {
             ui.elements.benchmarkCommandText.value = cmd;
         }
     },
-    
+
     // =========================================================================
     // Copy Methods
     // =========================================================================
@@ -644,7 +644,7 @@ export const GuideLLMModule = {
         const ui = this.ui;
         const command = ui.elements.benchmarkCommandText?.value;
         if (!command) return;
-        
+
         try {
             await navigator.clipboard.writeText(command);
             ui.showNotification('Benchmark command copied!', 'success');
@@ -657,7 +657,7 @@ export const GuideLLMModule = {
         const ui = this.ui;
         const output = ui.elements.guidellmRawOutput?.value;
         if (!output) return;
-        
+
         try {
             await navigator.clipboard.writeText(output);
             ui.showNotification('GuideLLM output copied!', 'success');
@@ -670,7 +670,7 @@ export const GuideLLMModule = {
         const ui = this.ui;
         const jsonOutput = document.getElementById('guidellm-json-output');
         if (!jsonOutput) return;
-        
+
         try {
             await navigator.clipboard.writeText(jsonOutput.textContent);
             ui.showNotification('GuideLLM JSON copied!', 'success');
@@ -678,7 +678,7 @@ export const GuideLLMModule = {
             ui.showNotification('Failed to copy JSON', 'error');
         }
     },
-    
+
     // =========================================================================
     // Toggle Methods
     // =========================================================================
@@ -687,9 +687,9 @@ export const GuideLLMModule = {
         const ui = this.ui;
         const content = ui.elements.guidellmRawOutputContent;
         const btn = ui.elements.toggleRawOutputBtn;
-        
+
         if (!content || !btn) return;
-        
+
         if (content.style.display === 'none') {
             content.style.display = 'block';
             btn.textContent = 'Hide';
@@ -703,9 +703,9 @@ export const GuideLLMModule = {
         const ui = this.ui;
         const content = ui.elements.guidellmJsonOutputContent;
         const btn = ui.elements.toggleJsonOutputBtn;
-        
+
         if (!content || !btn) return;
-        
+
         if (content.style.display === 'none') {
             content.style.display = 'block';
             btn.textContent = 'Hide';

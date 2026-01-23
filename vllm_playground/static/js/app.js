@@ -346,7 +346,7 @@ class VLLMWebUI {
             document.addEventListener('mousemove', (e) => this.navResize(e));
             document.addEventListener('mouseup', () => this.stopNavResize());
         }
-        
+
     }
 
     toggleNavSidebar() {
@@ -1449,7 +1449,7 @@ number ::= [0-9]+`
                 } else {
                     acceleratorName = 'NVIDIA (CUDA)';
                 }
-                
+
                 console.log(`GPU is available on this system: ${acceleratorName}`);
                 this.elements.modeHelpText.innerHTML = `CPU and GPU modes available. ${acceleratorName} detected.`;
                 this.addLog(`[SYSTEM] ${acceleratorName} detected - Both CPU and GPU modes available`, 'info');
@@ -1738,16 +1738,16 @@ number ::= [0-9]+`
 
     updateAcceleratorHelpText() {
         const isSubprocess = this.elements.runModeSubprocess.checked;
-        
+
         // In subprocess mode, vLLM auto-detects hardware
         if (isSubprocess) {
             this.elements.modeHelpText.textContent = 'GPU mode - vLLM will auto-detect available hardware (NVIDIA/AMD/TPU)';
             return;
         }
-        
+
         // In container mode, show accelerator-specific help
         if (!this.elements.acceleratorSelect) return;
-        
+
         const accelerator = this.elements.acceleratorSelect.value;
         if (accelerator === 'amd') {
             this.elements.modeHelpText.textContent = 'GPU mode for AMD ROCm-enabled systems';
@@ -3870,8 +3870,8 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
         }
     }
 
-    // NOTE: Benchmark methods (runBenchmark, stopBenchmark, pollBenchmarkStatus, 
-    // displayBenchmarkResults, displayBenchmarkTable, resetBenchmarkUI) are 
+    // NOTE: Benchmark methods (runBenchmark, stopBenchmark, pollBenchmarkStatus,
+    // displayBenchmarkResults, displayBenchmarkTable, resetBenchmarkUI) are
     // injected by GuideLLM module (modules/guidellm.js)
 
     // ============ Template Settings ============
@@ -4836,7 +4836,7 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                                     <textarea id="edit-recipe-description" class="form-control" rows="2" placeholder="Brief description of the model..."></textarea>
                                 </div>
                             </div>
-                            
+
                             <!-- vLLM Config -->
                             <div class="edit-form-section">
                                 <h3>⚙️ vLLM Configuration</h3>
@@ -4889,7 +4889,7 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                                     </label>
                                 </div>
                             </div>
-                            
+
                             <!-- Hardware -->
                             <div class="edit-form-section">
                                 <h3>🖥️ Hardware Requirements</h3>
@@ -4904,7 +4904,7 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                                     </div>
                                 </div>
                             </div>
-                            
+
                             <!-- Tags -->
                             <div class="edit-form-section">
                                 <h3>🏷️ Tags</h3>
@@ -4918,7 +4918,7 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                                     <input type="url" id="edit-recipe-docs-url" class="form-control" placeholder="https://github.com/...">
                                 </div>
                             </div>
-                            
+
                             <!-- Actions -->
                             <div class="edit-form-actions">
                                 <button type="button" class="btn btn-secondary" onclick="window.vllmUI.closeEditRecipeModal()">Cancel</button>
@@ -6084,7 +6084,7 @@ style.textContent = `
             opacity: 1;
         }
     }
-    
+
     @keyframes slideOut {
         from {
             transform: translateX(0);
@@ -6112,4 +6112,3 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 });
-

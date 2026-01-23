@@ -1,8 +1,8 @@
 /**
  * i18n - Internationalization Module
  * Lightweight i18n solution for vLLM Playground
- * 
- * Design: 
+ *
+ * Design:
  * - English (default): Keep original HTML text, minimal language pack for dynamic content
  * - Other languages: Full translation with data-i18n attributes
  */
@@ -14,7 +14,7 @@ class I18n {
         this.defaultLocale = 'en';
         this.fallbackLocale = 'en';
         this.originalTexts = new Map(); // Store original English texts
-        
+
         // Available languages configuration
         this.availableLocales = {
             'en': {
@@ -34,22 +34,22 @@ class I18n {
     init() {
         // Store original texts before any translation
         this.storeOriginalTexts();
-        
+
         // Load saved language preference (no auto-detection, default to English)
         const savedLocale = localStorage.getItem('vllm-locale');
-        
+
         // Priority: saved > default (English)
         // Note: We intentionally don't auto-detect browser language
         // First visit always shows English, user can manually switch
         let locale = savedLocale || this.defaultLocale;
-        
+
         // Ensure locale is available
         if (!this.availableLocales[locale]) {
             locale = this.defaultLocale;
         }
-        
+
         this.setLocale(locale);
-        
+
         console.log(`[i18n] Initialized with locale: ${locale}`);
     }
 
@@ -64,7 +64,7 @@ class I18n {
                 this.originalTexts.set(`text:${key}`, element.textContent);
             }
         });
-        
+
         // Store HTML content
         document.querySelectorAll('[data-i18n-html]').forEach(element => {
             const key = element.getAttribute('data-i18n-html');
@@ -72,7 +72,7 @@ class I18n {
                 this.originalTexts.set(`html:${key}`, element.innerHTML);
             }
         });
-        
+
         // Store placeholders
         document.querySelectorAll('[data-i18n-placeholder]').forEach(element => {
             const key = element.getAttribute('data-i18n-placeholder');
@@ -80,7 +80,7 @@ class I18n {
                 this.originalTexts.set(`placeholder:${key}`, element.placeholder);
             }
         });
-        
+
         // Store titles
         document.querySelectorAll('[data-i18n-title]').forEach(element => {
             const key = element.getAttribute('data-i18n-title');
@@ -109,16 +109,16 @@ class I18n {
             console.warn(`[i18n] Locale '${locale}' not found, falling back to '${this.fallbackLocale}'`);
             locale = this.fallbackLocale;
         }
-        
+
         this.currentLocale = locale;
         localStorage.setItem('vllm-locale', locale);
-        
+
         // Update all translatable elements
         this.updateDOM();
-        
+
         // Dispatch locale change event
         window.dispatchEvent(new CustomEvent('localeChanged', { detail: { locale } }));
-        
+
         console.log(`[i18n] Locale changed to: ${locale}`);
     }
 
@@ -141,22 +141,22 @@ class I18n {
      */
     detectBrowserLocale() {
         const browserLang = navigator.language || navigator.userLanguage;
-        
+
         // Try exact match first
         if (this.availableLocales[browserLang]) {
             return browserLang;
         }
-        
+
         // Try language code only (e.g., 'zh' from 'zh-TW')
         const langCode = browserLang.split('-')[0];
-        
+
         // Find first matching language
         for (const locale in this.availableLocales) {
             if (locale.startsWith(langCode)) {
                 return locale;
             }
         }
-        
+
         return null;
     }
 
@@ -175,15 +175,15 @@ class I18n {
             }
             return key; // Return key directly for English
         }
-        
+
         // For other languages, get translation
         let translation = this.getTranslation(key, this.currentLocale);
-        
+
         // Fallback to English if not found
         if (translation === key && this.currentLocale !== this.fallbackLocale) {
             translation = this.getTranslation(key, this.fallbackLocale);
         }
-        
+
         return this.replaceParams(translation, params);
     }
 
@@ -209,10 +209,10 @@ class I18n {
     getTranslation(key, locale) {
         const translations = this.translations[locale];
         if (!translations) return key;
-        
+
         const keys = key.split('.');
         let result = translations;
-        
+
         for (const k of keys) {
             if (result && typeof result === 'object' && k in result) {
                 result = result[k];
@@ -220,7 +220,7 @@ class I18n {
                 return key; // Return key if path not found
             }
         }
-        
+
         return result;
     }
 
@@ -243,7 +243,7 @@ class I18n {
                 }
             }
         });
-        
+
         // Update elements with data-i18n-html attribute (HTML content)
         document.querySelectorAll('[data-i18n-html]').forEach(element => {
             const key = element.getAttribute('data-i18n-html');
@@ -258,7 +258,7 @@ class I18n {
                 }
             }
         });
-        
+
         // Update placeholders
         document.querySelectorAll('[data-i18n-placeholder]').forEach(element => {
             const key = element.getAttribute('data-i18n-placeholder');
@@ -273,7 +273,7 @@ class I18n {
                 }
             }
         });
-        
+
         // Update titles/tooltips
         document.querySelectorAll('[data-i18n-title]').forEach(element => {
             const key = element.getAttribute('data-i18n-title');
@@ -288,7 +288,7 @@ class I18n {
                 }
             }
         });
-        
+
         // Update aria-labels
         document.querySelectorAll('[data-i18n-aria]').forEach(element => {
             const key = element.getAttribute('data-i18n-aria');
@@ -305,23 +305,23 @@ class I18n {
     createLanguageSelector(container) {
         const selector = document.createElement('div');
         selector.className = 'language-selector';
-        
+
         const button = document.createElement('button');
         button.className = 'language-selector-btn';
         button.id = 'language-selector-btn';
         button.title = 'Switch Language / 切换语言';
-        
+
         const currentLocale = this.availableLocales[this.currentLocale];
         button.innerHTML = `
             <span class="language-icon">🌐</span>
             <span class="language-label">${currentLocale.nativeName}</span>
             <span class="language-dropdown-icon">▼</span>
         `;
-        
+
         const dropdown = document.createElement('div');
         dropdown.className = 'language-dropdown';
         dropdown.id = 'language-dropdown';
-        
+
         // Create dropdown items
         Object.keys(this.availableLocales).forEach(locale => {
             const localeInfo = this.availableLocales[locale];
@@ -335,32 +335,32 @@ class I18n {
                 <span class="language-name">${localeInfo.nativeName}</span>
                 ${locale === this.currentLocale ? '<span class="language-check">✓</span>' : ''}
             `;
-            
+
             item.addEventListener('click', (e) => {
                 e.stopPropagation();
                 this.setLocale(locale);
                 this.updateLanguageSelector();
                 dropdown.classList.remove('show');
             });
-            
+
             dropdown.appendChild(item);
         });
-        
+
         // Toggle dropdown
         button.addEventListener('click', (e) => {
             e.stopPropagation();
             dropdown.classList.toggle('show');
         });
-        
+
         // Close dropdown when clicking outside
         document.addEventListener('click', () => {
             dropdown.classList.remove('show');
         });
-        
+
         selector.appendChild(button);
         selector.appendChild(dropdown);
         container.appendChild(selector);
-        
+
         return selector;
     }
 
@@ -370,7 +370,7 @@ class I18n {
     updateLanguageSelector() {
         const button = document.getElementById('language-selector-btn');
         const dropdown = document.getElementById('language-dropdown');
-        
+
         if (button && dropdown) {
             const currentLocale = this.availableLocales[this.currentLocale];
             button.innerHTML = `
@@ -378,7 +378,7 @@ class I18n {
                 <span class="language-label">${currentLocale.nativeName}</span>
                 <span class="language-dropdown-icon">▼</span>
             `;
-            
+
             // Update active state and checkmark
             dropdown.querySelectorAll('.language-dropdown-item').forEach(item => {
                 const locale = item.getAttribute('data-locale');
@@ -402,4 +402,3 @@ class I18n {
 
 // Create global i18n instance
 window.i18n = new I18n();
-
