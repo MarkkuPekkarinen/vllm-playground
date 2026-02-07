@@ -580,10 +580,14 @@ class ToolCall(BaseModel):
 
 
 class ChatMessage(BaseModel):
-    """Chat message structure with tool calling support"""
+    """Chat message structure with tool calling and VLM (vision) support"""
 
     role: str  # "system", "user", "assistant", or "tool"
-    content: Optional[str] = None  # Can be None when assistant makes tool calls
+    # Content can be a string (text-only) or a list of content parts (multimodal/VLM).
+    # List format follows the OpenAI Vision API:
+    #   [{"type": "image_url", "image_url": {"url": "data:image/...;base64,..."}},
+    #    {"type": "text", "text": "Describe this image."}]
+    content: Optional[Union[str, List[Dict[str, Any]]]] = None
     # For assistant messages with tool calls
     tool_calls: Optional[List[ToolCall]] = None
     # For tool response messages
@@ -3180,10 +3184,22 @@ async def chat(request: ChatRequestWithStopTokens):
             logger.info(f"✓ Letting vLLM handle stop tokens automatically (recommended for /v1/chat/completions)")
 
         # Log the request payload being sent to vLLM
+        # Truncate base64 image data in logs to avoid flooding
+        def _truncate_for_log(obj, max_str_len=200):
+            if isinstance(obj, str):
+                if len(obj) > max_str_len and ("base64," in obj or obj.startswith("data:")):
+                    return obj[:80] + f"...[{len(obj)} chars truncated]"
+                return obj if len(obj) <= max_str_len else obj[:max_str_len] + "..."
+            if isinstance(obj, list):
+                return [_truncate_for_log(item, max_str_len) for item in obj]
+            if isinstance(obj, dict):
+                return {k: _truncate_for_log(v, max_str_len) for k, v in obj.items()}
+            return obj
+
         logger.info(f"=== vLLM REQUEST ===")
         logger.info(f"URL: {url}")
-        logger.info(f"Payload: {payload}")
-        logger.info(f"Messages ({len(messages_dict)}): {messages_dict}")
+        logger.info(f"Payload keys: {list(payload.keys())}")
+        logger.info(f"Messages ({len(messages_dict)}): {_truncate_for_log(messages_dict)}")
         logger.info(f"==================")
 
         async def generate_stream():
@@ -3192,7 +3208,9 @@ async def chat(request: ChatRequestWithStopTokens):
             buffer = ""  # Buffer for incomplete lines
             try:
                 # Set reasonable timeout to prevent hanging
-                timeout = aiohttp.ClientTimeout(total=300, connect=10, sock_read=30)
+                # sock_read=120 is needed for VLM models that may take longer
+                # to process images before producing the first token
+                timeout = aiohttp.ClientTimeout(total=300, connect=10, sock_read=120)
                 auth_headers = get_vllm_auth_headers()
                 async with aiohttp.ClientSession(timeout=timeout, headers=auth_headers) as session:
                     async with session.post(url, json=payload) as response:
@@ -3304,8 +3322,8 @@ async def chat(request: ChatRequestWithStopTokens):
             )
         else:
             # Non-streaming response
-            # Set reasonable timeout to prevent hanging
-            timeout = aiohttp.ClientTimeout(total=60, connect=10)
+            # Set reasonable timeout - VLM image processing may need extra time
+            timeout = aiohttp.ClientTimeout(total=120, connect=10)
             auth_headers = get_vllm_auth_headers()
             async with aiohttp.ClientSession(timeout=timeout, headers=auth_headers) as session:
                 async with session.post(url, json=payload) as response:
