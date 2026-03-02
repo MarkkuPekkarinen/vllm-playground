@@ -6,6 +6,45 @@ For detailed release notes, see the [releases/](releases/) folder.
 
 ---
 
+## [v0.1.6](releases/v0.1.6.md) - 2026-03-02
+
+**Observability Dashboard & Context Insights**
+
+### Added
+- 📊 **Observability Dashboard** - Full-page metrics dashboard with auto-discovery
+  - Overview tab with categorized metric cards and threshold indicators
+  - All Metrics tab with searchable, sortable table
+  - Time Series tab with interactive uPlot charts (1m/5m/15m/1h windows)
+  - Latency tab for TTFT, TPOT, and E2E latency metrics
+  - Configurable threshold alerts with history log
+  - Generic metrics architecture: metrics-registry, metrics-poller, observability modules
+  - Export metrics data as JSON
+- 🔍 **PagedAttention Visualizer** - Real-time KV cache context observability
+  - Canvas-rendered block utilization heatmap
+  - Circular usage gauge and prefix cache stats
+  - Three-level eviction alerts (normal / warning / critical)
+- 🔢 **Token Counter** - Live token estimation alongside chat input
+  - Server-side `/tokenize` with character-based fallback
+  - Conversation token gauge against `max_model_len`
+- 🎨 **Logprobs Visualizer** - Per-token probability heatmap for assistant responses
+  - Four confidence levels with hover tooltips for alternative tokens
+  - BPE and SentencePiece token format support
+- ⚡ **Speculative Decoding Dashboard** - Acceptance rate, speedup factor, token counts
+  - Supports Eagle, Eagle3, MLP Speculator, Medusa, MTP, N-gram methods
+  - Demo mode for testing without a live speculative decoding setup
+- 💾 **Settings Persistence** - User preferences saved to `~/.vllm-playground/settings.json`
+  - Theme, locale, layout, run mode, and remote URLs
+  - Atomic writes with backup for crash safety
+
+### Fixed
+- Observability metrics accuracy and time-series persistence (#44)
+
+### Documentation (Community)
+- vLLM version updated to 0.15.0 in HTML template and installation guide (@nussejzz)
+- OpenShift Containerfile and documentation patches (@turbra)
+
+---
+
 ## [v0.1.5](releases/v0.1.5.md) - 2026-02-08
 
 **Remote Server & VLM (Vision Language Model) Support**
@@ -202,6 +241,7 @@ For detailed release notes, see the [releases/](releases/) folder.
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| v0.1.6 | 2026-03-02 | Observability dashboard, PagedAttention visualizer, token counter, logprobs, speculative decoding |
 | v0.1.5 | 2026-02-08 | Remote server, VLM vision support, markdown rendering |
 | v0.1.4 | 2026-02-01 | vLLM-Omni multimodal, Studio UI, pre-commit hooks |
 | v0.1.3 | 2026-01-22 | Multi-accelerators, Claude Code, vLLM-Metal |
