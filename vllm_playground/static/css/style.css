@@ -770,7 +770,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     align-items: stretch;
     position: relative;
     width: 100%;
-    flex: 1 1 auto;
+    flex: 1 1 0;
     min-height: 0;
     overflow: hidden;
 }
@@ -819,7 +819,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 .logs-row-title {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 6px;
 }
 
 .logs-row-title h2 {
@@ -830,7 +830,7 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
 }
 
 .logs-toggle-icon {
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     color: var(--text-secondary);
     transition: transform 0.3s ease;
 }
@@ -903,8 +903,8 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     margin-bottom: 0;
     display: flex;
     flex-direction: column;
-    min-height: 300px;
-    flex: 1 1 auto;
+    min-height: 0;
+    flex: 1 1 0;
     overflow: hidden;
 }
 
@@ -1215,34 +1215,93 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     width: 380px;
     flex-shrink: 0;
     min-width: 260px;
-    height: 100%;
+    align-self: stretch;
     position: relative;
 }
 
 .chat-section {
     flex: 1;
     min-width: 280px;
-    height: 100%;
+    align-self: stretch;
     display: flex;
     flex-direction: column;
-    overflow: visible;
+    overflow: hidden;
     position: relative;
     border-left: 1px solid var(--border-color);
     border-right: 1px solid var(--border-color);
 }
 
-/* Right column - Metrics */
+/* Right column - Metrics + Observability sidebar */
 .metrics-section {
     width: 280px;
     flex-shrink: 0;
     min-width: 220px;
-    height: 100%;
+    align-self: stretch;
     position: relative;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg-secondary);
+    border-left: 1px solid var(--border-color);
 }
 
-.metrics-section .panel {
-    height: 100%;
-    overflow-y: auto;
+/* Sidebar dashboard fills available space */
+.metrics-section > .sidebar-dashboard {
+    flex: 1;
+    min-height: 0;
+}
+
+/* Collapsible section wrapper inside metrics sidebar */
+.metrics-panel-section {
+    border-bottom: none;
+}
+
+.metrics-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 20px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.metrics-panel-header h2 {
+    margin: 0;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+
+.metrics-panel-body {
+    padding: 0 16px 16px;
+}
+
+.metrics-toggle-icon {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    transition: transform 0.2s ease;
+    display: inline-block;
+}
+
+.metrics-panel-section.collapsed .metrics-toggle-icon {
+    transform: rotate(-90deg);
+}
+
+.metrics-panel-section.collapsed .metrics-panel-body {
+    display: none;
+}
+
+/* Two-line header layout for sidebar panels (legacy; kept for reference) */
+.sidebar-panel-header-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    width: 100%;
+}
+    gap: 6px;
+    margin-left: auto;
 }
 
 /* Bottom row - Logs */
@@ -1315,12 +1374,12 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
     }
 
     .panel {
-        min-height: 400px;
+        min-height: 300px;
         max-height: none;
     }
 
     .chat-section .panel {
-        min-height: 500px;
+        min-height: 300px;
     }
 }
 
@@ -1646,6 +1705,44 @@ a, button, input, select, textarea, .btn, .nav-item, .panel, .card, .form-contro
    Remote Server Info Panel
    Displayed after connecting to a remote vLLM instance
    ═══════════════════════════════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════════════════════════════
+   Settings Saved Indicator
+   ═══════════════════════════════════════════════════════════════════ */
+
+.settings-saved-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    margin-top: 8px;
+    margin-bottom: 4px;
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+}
+
+.settings-saved-text {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+}
+
+.btn-link-small {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    opacity: 0.7;
+    transition: opacity 0.15s, background 0.15s;
+}
+
+.btn-link-small:hover {
+    opacity: 1;
+    background: var(--bg-tertiary);
+}
 
 .remote-server-info {
     margin-top: 12px;
@@ -2015,12 +2112,12 @@ code.remote-model-id {
 
 /* Chat Section */
 .chat-container {
-    flex: 1 1 auto;
+    flex: 1 1 0;
+    min-height: 0;
     margin-bottom: 15px;
     padding: 20px 16px;
     background: linear-gradient(180deg, #0d1117 0%, #161b22 100%);
     border-radius: 12px;
-    min-height: 200px;
     overflow-y: auto;
     overflow-x: hidden;
 }
@@ -2076,8 +2173,17 @@ code.remote-model-id {
 }
 
 .chat-message.assistant .message-avatar {
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-    color: white;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+}
+
+.avatar-logo {
+    width: 22px;
+    height: 22px;
+    object-fit: contain;
 }
 
 .chat-message.assistant .message-content {
@@ -2111,8 +2217,12 @@ code.remote-model-id {
 
 .message-content {
     word-wrap: break-word;
+    overflow-wrap: break-word;
+    word-break: break-word;
     line-height: 1.6;
     font-size: 0.9rem;
+    min-width: 0;
+    overflow: hidden;
 }
 
 /* Hide bold sender labels (non-markdown context) */
@@ -2852,22 +2962,23 @@ code.remote-model-id {
     }
 }
 
-/* Performance Metrics Section */
-.metrics-section {
-    margin-top: 40px;
-    min-height: 800px;
-    height: auto;
-    max-height: none;
-    overflow: visible;
+/* Metrics sidebar scrollbar */
+.metrics-section::-webkit-scrollbar {
+    width: 8px;
 }
 
-.metrics-section .panel {
-    height: auto;
-    max-height: none;
-    min-height: 800px;
-    margin: 0 10px;
-    overflow-y: auto;
-    padding-bottom: 40px;
+.metrics-section::-webkit-scrollbar-track {
+    background: var(--bg-primary);
+    border-radius: 4px;
+}
+
+.metrics-section::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 4px;
+}
+
+.metrics-section::-webkit-scrollbar-thumb:hover {
+    background: var(--text-secondary);
 }
 
 .metrics-controls {

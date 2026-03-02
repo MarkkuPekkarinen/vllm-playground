@@ -9,6 +9,7 @@ const en = {
         vllmServer: 'vLLM Server',
         guidellm: 'GuideLLM',
         mcpServers: 'MCP Servers',
+        observability: 'Observability',
         offline: 'Offline',
         online: 'Online',
         collapseSidebar: 'Collapse sidebar',
@@ -270,6 +271,39 @@ const en = {
         prefixCacheHitRate: 'Prefix Cache Hit Rate:'
     },
 
+    // Context Observability (PagedAttention Visualizer)
+    contextObs: {
+        title: '🧠 Context Observability',
+        noData: 'Waiting for metrics from vLLM server...<br><small>KV cache metrics require a self-hosted vLLM instance with Prometheus enabled, or use the simulation API for testing.</small>',
+        kvCache: {
+            label: 'KV Cache Utilization',
+            legendNow: 'Now',
+            legendAgo: '~2 min ago'
+        },
+        prefixCache: {
+            active: 'Prefix Cache Active',
+            inactive: 'Prefix Cache Inactive',
+            noData: 'No prefix cache data available',
+            reusingMemory: 'System prompt memory is being reused'
+        },
+        demo: {
+            runButton: '▶ Run Demo Simulation',
+            running: '⏳ Simulating...',
+            tooltip: 'Run demo simulation',
+            clearTooltip: 'Clear demo data',
+            badge: 'SIMULATED'
+        },
+        eviction: {
+            pressureTitle: 'Memory Pressure',
+            pressureDetail: 'KV cache utilization is high. Context eviction may begin soon.',
+            criticalTitle: 'Critical Memory Pressure',
+            criticalDetail: 'KV cache is nearly full. Context eviction is imminent.',
+            activeTitle: 'Context Eviction Active',
+            activeDetail: "The model's memory is full. Oldest conversation context is being dropped to make room for new tokens.",
+            toast: 'Memory full — the model is dropping older conversation context to continue generating.'
+        }
+    },
+
     // Logs Panel
     logs: {
         title: '📋 Server Logs',
@@ -419,6 +453,35 @@ const en = {
         switch: 'Switch Language',
         english: 'English',
         chinese: '简体中文'
+    },
+
+    // Token Counter
+    tokenCounter: {
+        label: 'Tokens:',
+        warningNearLimit: 'Approaching context limit — the model may start losing earlier conversation.'
+    },
+
+    // Logprobs Visualizer
+    logprobs: {
+        enableLabel: 'Show Logprobs'
+    },
+
+    // Speculative Decoding Dashboard
+    specDecode: {
+        title: '🚀 Speculative Decoding',
+        methodLabel: 'Speculative Decoding (Optional)',
+        methodHelp: 'Choose a speculation method to reduce inter-token latency.',
+        modelLabel: 'Draft / Speculator Model',
+        modelHelp: 'HuggingFace model ID for the draft model.',
+        acceptanceRate: 'Acceptance Rate',
+        speedup: 'Speedup Factor',
+        draftTokens: 'Draft Tokens',
+        acceptedTokens: 'Accepted Tokens',
+        demo: {
+            runButton: '▶ Run Demo Simulation',
+            running: '⏳ Simulating...',
+            badge: 'SIMULATED'
+        }
     }
 };
 

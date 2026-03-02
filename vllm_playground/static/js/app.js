@@ -3,6 +3,10 @@ import { initMCPModule } from './modules/mcp.js';
 import { initGuideLLMModule } from './modules/guidellm.js';
 import { initClaudeCodeModule } from './modules/claudecode.js';
 import { initOmniModule } from './modules/omni.js';
+import { initTokenCounterModule } from './modules/token-counter.js';
+import { initLogprobsModule } from './modules/logprobs.js';
+import { initObservabilityModule } from './modules/observability.js';
+import { metricsPoller } from './modules/metrics-poller.js';
 
 class VLLMWebUI {
     constructor() {
@@ -31,8 +35,8 @@ class VLLMWebUI {
         this.tools = [];  // Array of tool definitions
         this.editingToolIndex = -1;  // Index of tool being edited, -1 for new tool
 
-        // Theme state
-        this.currentTheme = localStorage.getItem('vllm-theme') || 'dark';
+        // Theme state (will be overridden by loadSettings() on init)
+        this.currentTheme = 'dark';
 
         // GuideLLM state
         this.guidellmAvailable = false;
@@ -311,7 +315,7 @@ class VLLMWebUI {
         // Initialize compute mode (CPU is default)
         this.toggleComputeMode();
 
-        // Initialize run mode (Subprocess is default)
+        // Initialize run mode (Remote is default, may be overridden by loadSettings)
         this.toggleRunMode();
 
         // Initialize model source (HF Hub is default)
@@ -339,6 +343,12 @@ class VLLMWebUI {
         document.getElementById('gpu-status-refresh').addEventListener('click', () => {
             this.fetchGpuStatus();
         });
+
+        // "Clear saved settings" button
+        const clearSettingsBtn = document.getElementById('clear-saved-settings-btn');
+        if (clearSettingsBtn) {
+            clearSettingsBtn.addEventListener('click', () => this.clearSavedSettings());
+        }
 
         // Tool Calling event listeners
         this.initToolCalling();
@@ -497,8 +507,21 @@ class VLLMWebUI {
                         this.onOmniViewActivated();
                     }
                     break;
+                case 'observability':
+                    viewTitle.innerHTML = '<span class="view-title-icon icon-observability-header"></span> Observability';
+                    if (this.onObservabilityViewActivated) {
+                        this.onObservabilityViewActivated();
+                    }
+                    break;
                 default:
                     viewTitle.textContent = viewId;
+            }
+        }
+
+        // Handle view deactivation for Observability
+        if (this.currentView === 'observability' && viewId !== 'observability') {
+            if (this.onObservabilityViewDeactivated) {
+                this.onObservabilityViewDeactivated();
             }
         }
 
@@ -551,8 +574,164 @@ class VLLMWebUI {
     toggleTheme() {
         const newTheme = this.currentTheme === 'dark' ? 'light' : 'dark';
         this.applyTheme(newTheme);
-        localStorage.setItem('vllm-theme', newTheme);
+        this.saveSettings({ theme: newTheme });
         this.showNotification(`Switched to ${newTheme} mode`, 'info');
+    }
+
+    // ============ Settings Persistence ============
+
+    /**
+     * Load all settings from the server and apply them.
+     * Falls back to hardcoded defaults if the API is unreachable.
+     * Also handles one-time migration from localStorage for existing users.
+     */
+    async loadSettings() {
+        let settings;
+        try {
+            const resp = await fetch('/api/settings');
+            if (resp.ok) {
+                settings = await resp.json();
+            }
+        } catch (e) {
+            console.warn('Failed to load settings from server, using defaults:', e);
+        }
+
+        // Hardcoded fallback defaults (must match backend DEFAULTS)
+        if (!settings) {
+            settings = {
+                theme: 'dark',
+                locale: 'en',
+                layout: null,
+                vllm_run_mode: 'remote',
+                vllm_remote_url: '',
+                vllm_remote_api_key: '',
+                omni_run_mode: 'remote',
+                omni_remote_url: '',
+                omni_remote_api_key: ''
+            };
+        }
+
+        // --- Migration from localStorage (one-time upgrade path) ---
+        const lsTheme = localStorage.getItem('vllm-theme');
+        const lsLocale = localStorage.getItem('vllm-locale');
+        const lsLayout = localStorage.getItem('vllm-webui-layout');
+
+        if (lsTheme || lsLocale || lsLayout) {
+            const migrated = {};
+            if (lsTheme) { migrated.theme = lsTheme; settings.theme = lsTheme; }
+            if (lsLocale) { migrated.locale = lsLocale; settings.locale = lsLocale; }
+            if (lsLayout) {
+                try {
+                    migrated.layout = JSON.parse(lsLayout);
+                    settings.layout = migrated.layout;
+                } catch (e) { /* ignore bad layout JSON */ }
+            }
+            // Push migrated values to the server
+            this.saveSettings(migrated);
+            // Clear old localStorage keys
+            localStorage.removeItem('vllm-theme');
+            localStorage.removeItem('vllm-locale');
+            localStorage.removeItem('vllm-webui-layout');
+            console.log('[settings] Migrated localStorage preferences to server');
+        }
+
+        // --- Apply settings ---
+
+        // Theme
+        if (settings.theme) {
+            this.applyTheme(settings.theme);
+        }
+
+        // Layout
+        if (settings.layout) {
+            this.loadLayoutPreferences(settings.layout);
+        }
+
+        // Locale (pass to i18n module if available)
+        if (settings.locale && window.i18n && window.i18n.currentLocale !== settings.locale) {
+            window.i18n.setLocale(settings.locale);
+        }
+
+        // Run mode
+        if (settings.vllm_run_mode) {
+            const radio = document.getElementById(`run-mode-${settings.vllm_run_mode}`);
+            if (radio) {
+                radio.checked = true;
+                // Update active class on labels
+                document.querySelectorAll('.mode-toggle-buttons label[id^="run-mode-"]').forEach(label => {
+                    label.classList.remove('active');
+                });
+                const label = document.getElementById(`run-mode-${settings.vllm_run_mode}-label`);
+                if (label) label.classList.add('active');
+                this.toggleRunMode();
+            }
+        }
+
+        // Remote URL and API key
+        if (settings.vllm_remote_url) {
+            const urlInput = document.getElementById('remote-url');
+            if (urlInput) urlInput.value = settings.vllm_remote_url;
+        }
+        if (settings.vllm_remote_api_key) {
+            const keyInput = document.getElementById('remote-api-key');
+            if (keyInput) keyInput.value = settings.vllm_remote_api_key;
+        }
+
+        // Show "Settings saved" indicator if remote URL is saved
+        this.updateSettingsSavedIndicator(settings.vllm_remote_url);
+
+        // Store settings for Omni module to consume
+        this._serverSettings = settings;
+    }
+
+    /**
+     * Persist partial settings to the server (fire-and-forget).
+     */
+    saveSettings(updates) {
+        fetch('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updates)
+        }).catch(e => console.warn('Failed to save settings:', e));
+    }
+
+    /**
+     * Show/hide the "Settings saved" indicator based on whether
+     * a remote URL is persisted.
+     */
+    updateSettingsSavedIndicator(remoteUrl) {
+        const indicator = document.getElementById('settings-saved-indicator');
+        if (indicator) {
+            indicator.style.display = remoteUrl ? 'flex' : 'none';
+        }
+    }
+
+    /**
+     * Briefly flash the "Settings saved" text after a save.
+     */
+    flashSettingsSaved() {
+        const indicator = document.getElementById('settings-saved-indicator');
+        if (indicator) {
+            indicator.style.display = 'flex';
+            const text = indicator.querySelector('.settings-saved-text');
+            if (text) {
+                text.textContent = '✓ Settings saved';
+                setTimeout(() => { text.textContent = 'Settings saved'; }, 2000);
+            }
+        }
+    }
+
+    /**
+     * Clear saved remote URL and API key.
+     */
+    clearSavedSettings() {
+        this.saveSettings({ vllm_remote_url: '', vllm_remote_api_key: '' });
+        const urlInput = document.getElementById('remote-url');
+        const keyInput = document.getElementById('remote-api-key');
+        if (urlInput) urlInput.value = '';
+        if (keyInput) keyInput.value = '';
+        this.updateSettingsSavedIndicator('');
+        this.showNotification('Saved connection settings cleared', 'info');
     }
 
     // ============ i18n (Internationalization) ============
@@ -1527,8 +1706,23 @@ number ::= [0-9]+`
             this.omniVersion = features.vllm_omni_version || null;
             initOmniModule(this);
 
+            // Initialize Live Token Counter
+            initTokenCounterModule(this);
+
+            // Initialize Logprobs Visualizer
+            initLogprobsModule(this);
+
+            // Initialize Observability Dashboard
+            initObservabilityModule(this);
+
+            // Sidebar health badge (replaces per-panel resize handles)
+            this.initSidebarHealthBadge();
+
             // Preload vLLM-Omni template immediately (like MCP/Claude Code which are inline)
             this.loadOmniTemplate();
+
+            // Preload Observability template
+            this.loadObservabilityTemplate();
 
             // Handle ModelScope availability
             this.modelscopeInstalled = features.modelscope_installed || false;
@@ -2415,7 +2609,7 @@ number ::= [0-9]+`
         }
 
         // Get run mode (subprocess, container, or remote)
-        let runMode = 'container';
+        let runMode = 'remote';
         if (document.getElementById('run-mode-subprocess').checked) {
             runMode = 'subprocess';
         } else if (document.getElementById('run-mode-remote').checked) {
@@ -2439,8 +2633,45 @@ number ::= [0-9]+`
             modelscope_token: isModelscope && modelscopeToken ? modelscopeToken : null,  // ModelScope token
             enable_tool_calling: this.elements.enableToolCalling.checked,
             tool_call_parser: this.elements.toolCallParser.value || null,  // null = auto-detect
-            served_model_name: this.elements.servedModelName?.value.trim() || null  // null = use model path
+            served_model_name: this.elements.servedModelName?.value.trim() || null,  // null = use model path
+            speculative_method: null,
+            speculative_model: null,
+            num_speculative_tokens: null,
+            draft_tensor_parallel_size: null,
+            prompt_lookup_max: null,
         };
+
+        // Build speculative decoding config from UI fields
+        const specMethod = document.getElementById('spec-decode-method')?.value || '';
+        if (specMethod) {
+            const modelRequiredMethods = ['eagle', 'eagle3', 'mlp_speculator', 'medusa', 'mtp'];
+            const needsModel = modelRequiredMethods.includes(specMethod);
+            const specModelVal = document.getElementById('speculative-model')?.value.trim() || '';
+
+            if (needsModel && !specModelVal) {
+                this.showAlert({
+                    title: 'Missing Draft Model',
+                    message: `The "${specMethod}" speculative decoding method requires a draft model path. Please enter a HuggingFace model ID in the "Draft / Speculator Model" field.`,
+                    icon: '⚠️',
+                    type: 'danger',
+                });
+                return;
+            }
+
+            config.speculative_method = specMethod;
+            if (needsModel) {
+                config.speculative_model = specModelVal;
+            }
+            config.num_speculative_tokens = parseInt(document.getElementById('num-speculative-tokens')?.value) || null;
+            if (['eagle', 'eagle3', 'mlp_speculator'].includes(specMethod)) {
+                const dtp = parseInt(document.getElementById('draft-tensor-parallel-size')?.value);
+                if (dtp && dtp > 0) config.draft_tensor_parallel_size = dtp;
+            }
+            if (specMethod === 'ngram') {
+                const plm = parseInt(document.getElementById('prompt-lookup-max')?.value);
+                if (plm && plm > 0) config.prompt_lookup_max = plm;
+            }
+        }
 
         // Add remote mode settings
         if (runMode === 'remote') {
@@ -2632,16 +2863,26 @@ number ::= [0-9]+`
                 this.populateRemoteServerInfo(data);
                 // Enable tool calling controls (assume remote supports it)
                 this.updateToolPanelStatus();
+                // Persist connection settings for next visit
+                this.saveSettings({
+                    vllm_run_mode: 'remote',
+                    vllm_remote_url: config.remote_url || '',
+                    vllm_remote_api_key: config.remote_api_key || ''
+                });
+                this.flashSettingsSaved();
+                this.updateSettingsSavedIndicator(config.remote_url);
             } else if (data.mode === 'container') {
                 this.addLog(`✅ Server started in container mode`, 'success');
                 this.addLog(`Container ID: ${data.container_id}`, 'info');
                 this.addLog('⏳ Waiting for server initialization...', 'info');
                 this.showNotification('Server started successfully', 'success');
+                this.saveSettings({ vllm_run_mode: 'container' });
             } else {
                 this.addLog(`✅ Server started in subprocess mode`, 'success');
                 this.addLog(`Process ID: ${data.pid}`, 'info');
                 this.addLog('⏳ Waiting for server initialization...', 'info');
                 this.showNotification('Server started successfully', 'success');
+                this.saveSettings({ vllm_run_mode: 'subprocess' });
             }
 
         } catch (error) {
@@ -2722,6 +2963,7 @@ number ::= [0-9]+`
             const maxLen = data.models[0].max_model_len;
             if (maxLen !== undefined && maxLen !== null) {
                 maxCtxEl.textContent = Number(maxLen).toLocaleString() + ' tokens';
+                if (this.tcSetMaxModelLen) this.tcSetMaxModelLen(maxLen);
             } else {
                 maxCtxEl.textContent = 'N/A';
             }
@@ -2729,7 +2971,9 @@ number ::= [0-9]+`
             maxCtxEl.textContent = 'N/A';
         }
 
-        // Root Model (base model path)
+        // Root Model (base model path) -- hidden in remote mode
+        const rootRow = document.getElementById('remote-info-root-row');
+        if (rootRow) rootRow.style.display = data.mode === 'remote' ? 'none' : '';
         const rootEl = document.getElementById('remote-info-root-value');
         if (rootEl && data.models && data.models.length > 0) {
             const root = data.models[0].root;
@@ -2889,6 +3133,11 @@ number ::= [0-9]+`
                 console.log('Structured outputs enabled:', structuredConfig);
             }
 
+            // Add logprobs if enabled
+            if (this.getLogprobsPayload) {
+                Object.assign(requestBody, this.getLogprobsPayload());
+            }
+
             // Use streaming
             const response = await fetch('/api/chat', {
                 method: 'POST',
@@ -2953,6 +3202,11 @@ number ::= [0-9]+`
                         textSpan.classList.add('markdown-body');
                         textSpan.innerHTML = this.renderMarkdown(message.content);
                         this.chatHistory.push({role: 'assistant', content: message.content});
+
+                        // Overlay logprobs for non-streaming response
+                        if (choice.logprobs?.content && this.isLogprobsEnabled?.() && this.renderLogprobs) {
+                            this.renderLogprobs(textSpan, message.content, choice.logprobs.content);
+                        }
                     } else {
                         textSpan.textContent = 'No response from model';
                         textSpan.classList.add('message-text');
@@ -2985,6 +3239,7 @@ number ::= [0-9]+`
                     timeTaken: timeTaken,
                     tokensPerSecond: completionTokens > 0 ? (completionTokens / timeTaken).toFixed(2) : 0
                 });
+                if (this.tcUpdateFromUsage) this.tcUpdateFromUsage(promptTokens, completionTokens);
 
                 console.log('Non-streaming response completed');
                 return;
@@ -2999,6 +3254,7 @@ number ::= [0-9]+`
             // Track raw response data for debugging tool call failures
             let rawChunks = [];
             let toolsWereRequested = requestBody.tools && requestBody.tools.length > 0;
+            let accumulatedLogprobs = [];
 
             while (true) {
                 const {done, value} = await reader.read();
@@ -3097,6 +3353,11 @@ number ::= [0-9]+`
 
                                     // Auto-scroll to bottom
                                     this.elements.chatContainer.scrollTop = this.elements.chatContainer.scrollHeight;
+                                }
+
+                                // Accumulate logprobs data from streaming chunks
+                                if (choice.logprobs?.content) {
+                                    accumulatedLogprobs.push(...choice.logprobs.content);
                                 }
                             }
 
@@ -3202,6 +3463,11 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                     textSpan.classList.add('markdown-body');
                     textSpan.innerHTML = this.renderMarkdown(fullText);
                     this.chatHistory.push({role: 'assistant', content: fullText});
+
+                    // Overlay logprobs heatmap if data was collected
+                    if (accumulatedLogprobs.length > 0 && this.isLogprobsEnabled?.() && this.renderLogprobs) {
+                        this.renderLogprobs(textSpan, fullText, accumulatedLogprobs);
+                    }
                 }
             } else {
                 // No content and no tool calls - show detailed error
@@ -3275,7 +3541,7 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
             // Estimate prompt tokens if not provided (rough estimate: ~4 chars per token)
             const estimatedPromptTokens = usageData?.prompt_tokens || Math.ceil(
                 this.chatHistory
-                    .filter(msg => msg.role === 'user')
+                    .filter(msg => msg.content)
                     .map(msg => msg.content.length)
                     .reduce((a, b) => a + b, 0) / 4
             );
@@ -3293,55 +3559,19 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
 
             console.log('Full usage data:', usageData);
 
-            // Wait a moment for vLLM to log stats for this request
-            // vLLM logs stats after request completion, so we need to give it time
-            console.log('⏳ Waiting 2 seconds for vLLM to log metrics...');
-            await new Promise(resolve => setTimeout(resolve, 2000));
-
-            // Fetch additional metrics from vLLM's metrics endpoint
+            // Read latest metrics from shared MetricsPoller (no extra HTTP request)
             let metricsAge = null;
-            try {
-                const metricsResponse = await fetch('/api/vllm/metrics');
-                console.log('Metrics response status:', metricsResponse.status);
-
-                if (metricsResponse.ok) {
-                    const vllmMetrics = await metricsResponse.json();
-                    console.log('✓ Fetched vLLM metrics:', vllmMetrics);
-
-                    // Check how fresh the metrics are
-                    if (vllmMetrics.metrics_age_seconds !== undefined) {
-                        metricsAge = vllmMetrics.metrics_age_seconds;
-                        console.log(`  → Metrics age: ${metricsAge}s`);
-
-                        // Metrics should be very fresh (< 5 seconds) to be from this request
-                        if (metricsAge <= 5) {
-                            console.log(`  ✅ Metrics are fresh - likely from this response`);
-                        } else if (metricsAge > 30) {
-                            console.warn(`  ⚠️ Metrics are stale (${metricsAge}s old) - definitely NOT from this response`);
-                        } else {
-                            console.warn(`  ⚠️ Metrics are ${metricsAge}s old - may not be from this response`);
-                        }
-                    }
-
-                    // Update metrics if available
-                    if (vllmMetrics.kv_cache_usage_perc !== undefined) {
-                        console.log('  → Using KV cache usage:', vllmMetrics.kv_cache_usage_perc);
-                        kvCacheUsage = vllmMetrics.kv_cache_usage_perc;
-                    } else {
-                        console.log('  → No kv_cache_usage_perc in response');
-                    }
-
-                    if (vllmMetrics.prefix_cache_hit_rate !== undefined) {
-                        console.log('  → Using prefix cache hit rate:', vllmMetrics.prefix_cache_hit_rate);
-                        prefixCacheHitRate = vllmMetrics.prefix_cache_hit_rate;
-                    } else {
-                        console.log('  → No prefix_cache_hit_rate in response');
-                    }
-                } else {
-                    console.warn('Metrics endpoint returned non-ok status:', metricsResponse.status);
+            const vllmMetrics = metricsPoller.latest?.legacy;
+            if (vllmMetrics) {
+                if (vllmMetrics.metrics_age_seconds !== undefined) {
+                    metricsAge = vllmMetrics.metrics_age_seconds;
                 }
-            } catch (e) {
-                console.warn('Could not fetch vLLM metrics:', e);
+                if (vllmMetrics.kv_cache_usage_perc !== undefined) {
+                    kvCacheUsage = vllmMetrics.kv_cache_usage_perc;
+                }
+                if (vllmMetrics.prefix_cache_hit_rate !== undefined) {
+                    prefixCacheHitRate = vllmMetrics.prefix_cache_hit_rate;
+                }
             }
 
             console.log('Final Metrics:', {
@@ -3365,6 +3595,17 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                 prefixCacheHitRate: prefixCacheHitRate,
                 metricsAge: metricsAge
             });
+            if (this.tcUpdateFromUsage) this.tcUpdateFromUsage(estimatedPromptTokens, completionTokens);
+
+            fetch('/api/vllm/metrics/ingest', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    prompt_tokens: estimatedPromptTokens || null,
+                    completion_tokens: completionTokens || null,
+                    total_tokens: totalTokens || null,
+                }),
+            }).catch(() => {});
 
         } catch (error) {
             console.error('Chat error details:', error);
@@ -3425,7 +3666,16 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
         if (role !== 'system') {
             const avatarDiv = document.createElement('div');
             avatarDiv.className = 'message-avatar';
-            avatarDiv.textContent = role === 'user' ? 'U' : 'AI';
+            if (role === 'user') {
+                avatarDiv.textContent = 'U';
+            } else {
+                const logo = document.createElement('img');
+                logo.src = '/assets/vllm_only.png';
+                logo.alt = 'vLLM';
+                logo.className = 'avatar-logo';
+                logo.onerror = () => { logo.style.display = 'none'; avatarDiv.textContent = 'vLLM'; };
+                avatarDiv.appendChild(logo);
+            }
             messageDiv.appendChild(avatarDiv);
         }
 
@@ -3525,6 +3775,7 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                 </div>
             </div>
         `;
+        if (this.tcReset) this.tcReset();
         this.showNotification('Chat cleared successfully', 'success');
     }
 
@@ -3920,135 +4171,66 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
         });
     }
 
+    showAlert(options = {}) {
+        const {
+            title = 'Notice',
+            message = '',
+            icon = 'ℹ️',
+            type = 'primary',
+            buttonText = 'OK'
+        } = options;
+
+        const cancelBtn = document.getElementById('confirm-modal-cancel');
+        if (cancelBtn) cancelBtn.style.display = 'none';
+
+        return this.showConfirm({
+            title,
+            message,
+            icon,
+            type,
+            confirmText: buttonText,
+            cancelText: 'Cancel',
+        }).finally(() => {
+            if (cancelBtn) cancelBtn.style.display = '';
+        });
+    }
+
     updateChatMetrics(metrics) {
-        // Update all metric displays
-        const promptTokensEl = document.getElementById('metric-prompt-tokens');
-        const completionTokensEl = document.getElementById('metric-completion-tokens');
-        const totalTokensEl = document.getElementById('metric-total-tokens');
-        const timeTakenEl = document.getElementById('metric-time-taken');
-        const tokensPerSecEl = document.getElementById('metric-tokens-per-sec');
-        const promptThroughputEl = document.getElementById('metric-prompt-throughput');
-        const generationThroughputEl = document.getElementById('metric-generation-throughput');
-        const kvCacheUsageEl = document.getElementById('metric-kv-cache-usage');
-        const prefixCacheHitEl = document.getElementById('metric-prefix-cache-hit');
+        const parts = [];
+        const prompt = metrics.promptTokens;
+        const completion = metrics.completionTokens;
+        const total = metrics.totalTokens || (prompt + completion);
 
-        if (promptTokensEl) {
-            promptTokensEl.textContent = metrics.promptTokens || '-';
-            promptTokensEl.classList.add('updated');
-            setTimeout(() => promptTokensEl.classList.remove('updated'), 500);
-        }
-
-        if (completionTokensEl) {
-            completionTokensEl.textContent = metrics.completionTokens || '-';
-            completionTokensEl.classList.add('updated');
-            setTimeout(() => completionTokensEl.classList.remove('updated'), 500);
-        }
-
-        if (totalTokensEl) {
-            const total = (metrics.totalTokens || (metrics.promptTokens + metrics.completionTokens));
-            totalTokensEl.textContent = total;
-            totalTokensEl.classList.add('updated');
-            setTimeout(() => totalTokensEl.classList.remove('updated'), 500);
-        }
-
-        if (timeTakenEl) {
-            timeTakenEl.textContent = `${metrics.timeTaken.toFixed(2)}s`;
-            timeTakenEl.classList.add('updated');
-            setTimeout(() => timeTakenEl.classList.remove('updated'), 500);
-        }
-
-        if (tokensPerSecEl) {
-            const tokensPerSec = metrics.completionTokens / metrics.timeTaken;
-            tokensPerSecEl.textContent = tokensPerSec.toFixed(2);
-            tokensPerSecEl.classList.add('updated');
-            setTimeout(() => tokensPerSecEl.classList.remove('updated'), 500);
-        }
-
-        // New metrics
-        if (promptThroughputEl) {
-            // Calculate prompt throughput: prompt_tokens / time_to_first_token
-            if (metrics.timeToFirstToken && metrics.timeToFirstToken > 0) {
-                const promptThroughput = metrics.promptTokens / metrics.timeToFirstToken;
-                promptThroughputEl.textContent = `${promptThroughput.toFixed(2)} tok/s`;
-            } else {
-                // Fallback: use overall time if time_to_first_token not available
-                const promptThroughput = metrics.promptTokens / metrics.timeTaken;
-                promptThroughputEl.textContent = `${promptThroughput.toFixed(2)} tok/s`;
+        if (total) parts.push(`<span class="metric-tokens"><span class="metric-val">${total}</span> tokens (${prompt} in / ${completion} out)</span>`);
+        if (metrics.timeTaken != null) {
+            parts.push(`<span class="metric-time"><span class="metric-val">${metrics.timeTaken.toFixed(2)}s</span></span>`);
+            if (completion && metrics.timeTaken > 0) {
+                parts.push(`<span class="metric-throughput"><span class="metric-val">${(completion / metrics.timeTaken).toFixed(1)}</span> tok/s</span>`);
             }
-            promptThroughputEl.classList.add('updated');
-            setTimeout(() => promptThroughputEl.classList.remove('updated'), 500);
+        }
+        if (metrics.kvCacheUsage != null) {
+            parts.push(`<span class="metric-kv">KV: <span class="metric-val">${metrics.kvCacheUsage.toFixed(1)}%</span></span>`);
+        }
+        if (metrics.prefixCacheHitRate != null) {
+            parts.push(`<span class="metric-cache">Cache: <span class="metric-val">${metrics.prefixCacheHitRate.toFixed(1)}%</span></span>`);
         }
 
-        if (generationThroughputEl) {
-            // Calculate generation throughput: completion_tokens / (total_time - time_to_first_token)
-            if (metrics.timeToFirstToken) {
-                const generationTime = metrics.timeTaken - metrics.timeToFirstToken;
-                if (generationTime > 0) {
-                    const generationThroughput = metrics.completionTokens / generationTime;
-                    generationThroughputEl.textContent = `${generationThroughput.toFixed(2)} tok/s`;
-                } else {
-                    generationThroughputEl.textContent = '-';
-                }
-            } else {
-                // Fallback: use overall throughput
-                const generationThroughput = metrics.completionTokens / metrics.timeTaken;
-                generationThroughputEl.textContent = `${generationThroughput.toFixed(2)} tok/s`;
-            }
-            generationThroughputEl.classList.add('updated');
-            setTimeout(() => generationThroughputEl.classList.remove('updated'), 500);
+        if (parts.length === 0) return;
+
+        const chatContainer = this.elements.chatContainer;
+        if (!chatContainer) return;
+        const messages = chatContainer.querySelectorAll('.chat-message.assistant');
+        const lastMsg = messages[messages.length - 1];
+        if (!lastMsg) return;
+
+        let strip = lastMsg.querySelector('.message-metrics-inline');
+        if (!strip) {
+            strip = document.createElement('div');
+            strip.className = 'message-metrics-inline';
+            const contentDiv = lastMsg.querySelector('.message-content');
+            if (contentDiv) contentDiv.appendChild(strip);
         }
-
-        if (kvCacheUsageEl) {
-            // GPU KV cache usage - from vLLM stats if available
-            if (metrics.kvCacheUsage !== undefined && metrics.kvCacheUsage !== null) {
-                // Server already sends percentage values (e.g., 0.2 = 0.2%, not 20%)
-                // No conversion needed
-                const percentage = metrics.kvCacheUsage.toFixed(1);
-
-                // Add staleness indicator if metrics are old
-                if (metrics.metricsAge !== undefined && metrics.metricsAge > 5) {
-                    kvCacheUsageEl.textContent = `${percentage}% ⚠️`;
-                    kvCacheUsageEl.title = `Metrics age: ${metrics.metricsAge.toFixed(1)}s - may not reflect this response`;
-                } else if (metrics.metricsAge !== undefined) {
-                    kvCacheUsageEl.textContent = `${percentage}%`;
-                    kvCacheUsageEl.title = `Fresh metrics (${metrics.metricsAge.toFixed(1)}s old) - from this response`;
-                } else {
-                    kvCacheUsageEl.textContent = `${percentage}%`;
-                    kvCacheUsageEl.title = '';
-                }
-            } else {
-                kvCacheUsageEl.textContent = 'N/A';
-                kvCacheUsageEl.title = 'No data available';
-            }
-            kvCacheUsageEl.classList.add('updated');
-            setTimeout(() => kvCacheUsageEl.classList.remove('updated'), 500);
-        }
-
-        if (prefixCacheHitEl) {
-            // Prefix cache hit rate - from vLLM stats if available
-            if (metrics.prefixCacheHitRate !== undefined && metrics.prefixCacheHitRate !== null) {
-                // Server already sends percentage values (e.g., 36.1 = 36.1%, not 3610%)
-                // No conversion needed
-                const percentage = metrics.prefixCacheHitRate.toFixed(1);
-
-                // Add staleness indicator if metrics are old
-                if (metrics.metricsAge !== undefined && metrics.metricsAge > 5) {
-                    prefixCacheHitEl.textContent = `${percentage}% ⚠️`;
-                    prefixCacheHitEl.title = `Metrics age: ${metrics.metricsAge.toFixed(1)}s - may not reflect this response`;
-                } else if (metrics.metricsAge !== undefined) {
-                    prefixCacheHitEl.textContent = `${percentage}%`;
-                    prefixCacheHitEl.title = `Fresh metrics (${metrics.metricsAge.toFixed(1)}s old) - from this response`;
-                } else {
-                    prefixCacheHitEl.textContent = `${percentage}%`;
-                    prefixCacheHitEl.title = '';
-                }
-            } else {
-                prefixCacheHitEl.textContent = 'N/A';
-                prefixCacheHitEl.title = 'No data available';
-            }
-            prefixCacheHitEl.classList.add('updated');
-            setTimeout(() => prefixCacheHitEl.classList.remove('updated'), 500);
-        }
+        strip.innerHTML = parts.join('');
     }
 
     updateToolParserVisibility() {
@@ -4768,8 +4950,150 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
         // Remove resizing class
         document.body.classList.remove('resizing', 'resizing-vertical');
 
-        // Save layout preferences to localStorage
+        // Save layout preferences to server
         this.saveLayoutPreferences();
+    }
+
+    initSidebarHealthBadge() {
+        const openObs = document.getElementById('sidebar-open-obs');
+        if (openObs) {
+            openObs.addEventListener('click', () => this.switchView('observability'));
+        }
+
+        this._healthBadgeUnsub = metricsPoller.subscribe(({ all, legacy }) => {
+            this._updateHealthBadge(legacy, all);
+        });
+        if (!metricsPoller._timer) metricsPoller.start();
+    }
+
+    _updateHealthBadge(m, allData) {
+        const unavailEl  = document.getElementById('sidebar-metrics-unavailable');
+        const sectionsEl = document.getElementById('sidebar-metrics-sections');
+        const kvValEl  = document.getElementById('health-kv-value');
+        const kvFillEl = document.getElementById('health-kv-fill');
+        const reqsEl   = document.getElementById('health-reqs');
+        const evictEl  = document.getElementById('health-preemptions');
+        const promptEl = document.getElementById('health-prompt-tps');
+        const genEl    = document.getElementById('health-gen-tps');
+        const cacheEl  = document.getElementById('health-cache-rate');
+        const specSec  = document.getElementById('sidebar-spec-section');
+        const specRate = document.getElementById('health-spec-rate');
+        const specDraft= document.getElementById('health-spec-draft');
+        const alertsSec= document.getElementById('sidebar-alerts-section');
+        const alertsList= document.getElementById('sidebar-alerts-list');
+
+        const runMode = allData?.run_mode;
+        const source  = allData?.source;
+        const isRemoteNoMetrics = runMode === 'remote' && source === 'none';
+
+        if (isRemoteNoMetrics) {
+            if (unavailEl) unavailEl.style.display = '';
+            if (sectionsEl) sectionsEl.style.display = 'none';
+            return;
+        }
+
+        if (unavailEl) unavailEl.style.display = 'none';
+        if (sectionsEl) sectionsEl.style.display = '';
+
+        if (!m || Object.keys(m).length === 0) {
+            if (kvValEl) { kvValEl.textContent = '--%'; kvValEl.className = 'sidebar-gauge-value'; }
+            if (kvFillEl) { kvFillEl.style.width = '0%'; kvFillEl.style.background = 'var(--border-color)'; }
+            if (reqsEl)  { reqsEl.textContent = 'Reqs: --/--'; reqsEl.className = 'health-item'; }
+            if (evictEl) { evictEl.textContent = 'Evict: --'; evictEl.className = 'health-item'; }
+            if (promptEl) promptEl.textContent = '-- tok/s';
+            if (genEl)    genEl.textContent = '-- tok/s';
+            if (cacheEl)  cacheEl.textContent = '--%';
+            if (specSec)  specSec.style.display = 'none';
+            if (alertsSec) alertsSec.style.display = 'none';
+            return;
+        }
+
+        const kv = m.kv_cache_usage_perc;
+        if (kvValEl) {
+            if (kv != null) {
+                kvValEl.textContent = `${kv.toFixed(1)}%`;
+                kvValEl.className = 'sidebar-gauge-value ' + (kv >= 90 ? 'status-danger' : kv >= 70 ? 'status-warning' : 'status-ok');
+            } else {
+                kvValEl.textContent = '--%';
+                kvValEl.className = 'sidebar-gauge-value';
+            }
+        }
+        if (kvFillEl) {
+            const pct = kv != null ? Math.min(kv, 100) : 0;
+            kvFillEl.style.width = `${pct}%`;
+            kvFillEl.style.background = kv >= 90 ? 'var(--danger-color, #ef4444)' : kv >= 70 ? 'var(--warning-color, #f59e0b)' : 'var(--success-color, #22c55e)';
+        }
+
+        if (reqsEl) {
+            const running = m.num_requests_running ?? '--';
+            const waiting = m.num_requests_waiting ?? '--';
+            reqsEl.textContent = `Reqs: ${running}/${waiting}`;
+            const w = m.num_requests_waiting ?? 0;
+            reqsEl.className = 'health-item ' + (w >= 50 ? 'status-danger' : w >= 10 ? 'status-warning' : 'status-ok');
+        }
+
+        if (evictEl) {
+            const preemptions = m.num_preemptions;
+            if (preemptions != null) {
+                evictEl.textContent = `Evict: ${preemptions}`;
+                evictEl.className = 'health-item ' + (preemptions > 0 ? 'status-warning' : 'status-ok');
+            } else {
+                evictEl.textContent = 'Evict: --';
+                evictEl.className = 'health-item';
+            }
+        }
+
+        if (promptEl) {
+            const v = m.avg_prompt_throughput;
+            promptEl.textContent = v != null ? `${v.toFixed(1)} tok/s` : '-- tok/s';
+        }
+        if (genEl) {
+            const v = m.avg_generation_throughput;
+            genEl.textContent = v != null ? `${v.toFixed(1)} tok/s` : '-- tok/s';
+        }
+
+        if (cacheEl) {
+            const v = m.prefix_cache_hit_rate;
+            cacheEl.textContent = v != null ? `${v.toFixed(1)}%` : '--%';
+        }
+
+        const accepted = m.spec_decode_accepted;
+        const draft    = m.spec_decode_draft;
+        const hasSpec  = accepted != null && draft != null && draft > 0;
+        if (specSec) specSec.style.display = hasSpec ? '' : 'none';
+        if (hasSpec) {
+            const rate = ((accepted / draft) * 100).toFixed(0);
+            if (specRate) specRate.textContent = `${rate}%`;
+            if (specDraft) specDraft.textContent = `${draft}`;
+        }
+
+        this._updateSidebarAlerts(m, alertsSec, alertsList);
+    }
+
+    _updateSidebarAlerts(m, section, list) {
+        if (!section || !list) return;
+
+        const alerts = [];
+        const kv = m.kv_cache_usage_perc;
+        if (kv != null && kv >= 90)      alerts.push({ level: 'danger',  text: `KV Cache critical: ${kv.toFixed(1)}%` });
+        else if (kv != null && kv >= 70)  alerts.push({ level: 'warning', text: `KV Cache high: ${kv.toFixed(1)}%` });
+
+        const wait = m.num_requests_waiting;
+        if (wait != null && wait >= 50)   alerts.push({ level: 'danger',  text: `${wait} requests queued` });
+        else if (wait != null && wait >= 10) alerts.push({ level: 'warning', text: `${wait} requests waiting` });
+
+        const pre = m.num_preemptions;
+        if (pre != null && pre > 0)       alerts.push({ level: 'warning', text: `${pre} preemption(s)` });
+
+        if (alerts.length === 0) {
+            section.style.display = 'none';
+            return;
+        }
+
+        section.style.display = '';
+        list.innerHTML = alerts.map(a =>
+            `<div class="sidebar-alert-item"><span class="sidebar-alert-dot ${a.level}"></span><span class="sidebar-alert-text">${a.text}</span></div>`
+        ).join('');
     }
 
     saveLayoutPreferences() {
@@ -4779,19 +5103,12 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
             metricsHeight: document.querySelector('.metrics-section .panel')?.offsetHeight
         };
 
-        try {
-            localStorage.setItem('vllm-webui-layout', JSON.stringify(layout));
-        } catch (e) {
-            console.warn('Could not save layout preferences:', e);
-        }
+        this.saveSettings({ layout: layout });
     }
 
-    loadLayoutPreferences() {
+    loadLayoutPreferences(layout) {
         try {
-            const saved = localStorage.getItem('vllm-webui-layout');
-            if (saved) {
-                const layout = JSON.parse(saved);
-
+            if (layout) {
                 if (layout.configWidth) {
                     const configPanel = document.getElementById('config-panel');
                     if (configPanel) configPanel.style.width = `${layout.configWidth}px`;
@@ -4801,7 +5118,6 @@ ${fullText.substring(0, 200)}${fullText.length > 200 ? '...' : ''}`;
                     const logsPanel = document.getElementById('logs-panel');
                     if (logsPanel) logsPanel.style.width = `${layout.logsWidth}px`;
                 }
-
 
                 if (layout.metricsHeight) {
                     const metricsPanel = document.querySelector('.metrics-section .panel');
@@ -6569,8 +6885,8 @@ document.head.appendChild(style);
 document.addEventListener('DOMContentLoaded', () => {
     window.vllmUI = new VLLMWebUI();
 
-    // Load saved layout preferences
-    window.vllmUI.loadLayoutPreferences();
+    // Load settings from server and apply (theme, locale, layout, run mode, remote URL/key)
+    window.vllmUI.loadSettings();
 
     // Add cleanup on page unload
     window.addEventListener('beforeunload', () => {

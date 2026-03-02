@@ -22,12 +22,15 @@ A modern web interface for managing and interacting with vLLM servers (www.githu
 
 *Upload images and chat with vision models like Qwen2.5-VL, LLaVA, and more.*
 
-### 🆕 What's New in v0.1.5
+### 🆕 What's New in v0.1.6
+![Observability Dashboard](https://raw.githubusercontent.com/micytao/vllm-playground/main/assets/vllm-playground-observability.png)
 
-- 🌐 **Remote vLLM Server** - Connect to any remote vLLM instance via URL + API key
-- 🖼️ **VLM Support** - Image upload and multimodal chat with vision models
-- ✨ **Markdown Rendering** - Rich formatting for assistant messages (bold, lists, code blocks)
-- 🔧 **Bug Fixes** - GuideLLM hang, Claude Code remote mode, structured outputs for vLLM v0.12+
+*Real-time Observability Dashboard with auto-discovered vLLM metrics, category filtering, and threshold alerts.*
+
+- 📊 **Observability Dashboard** - Full-page metrics dashboard with time-series charts, threshold alerts, and auto-discovery
+- 🔍 **PagedAttention Visualizer** - Real-time KV cache utilization heatmap with eviction alerts
+- 🔢 **Token Counter & Logprobs** - Live token estimation and per-token probability heatmap
+- ⚡ **Speculative Decoding Dashboard** - Acceptance rate, speedup factor, and method configuration
 
 See **[Changelog](CHANGELOG.md)** for full details.
 
@@ -201,6 +204,7 @@ See [Custom venv Guide](docs/CUSTOM_VENV_GUIDE.md) for details.
 
 ### Releases
 - **[Changelog](CHANGELOG.md)** - Version history and changes
+- **[v0.1.6](releases/v0.1.6.md)** - Observability dashboard, PagedAttention visualizer, token counter, logprobs
 - **[v0.1.5](releases/v0.1.5.md)** - Remote server, VLM vision support, markdown rendering
 - **[v0.1.4](releases/v0.1.4.md)** - vLLM-Omni multimodal, Studio UI
 - **[v0.1.3](releases/v0.1.3.md)** - Multi-accelerators, Claude Code, vLLM-Metal
