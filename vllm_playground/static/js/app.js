@@ -513,6 +513,10 @@ class VLLMWebUI {
                         this.onObservabilityViewActivated();
                     }
                     break;
+                case 'tutorials':
+                    viewTitle.innerHTML = '<span class="view-title-icon">📖</span> Tutorials';
+                    this.lazyLoadTutorials();
+                    break;
                 default:
                     viewTitle.textContent = viewId;
             }
@@ -533,6 +537,31 @@ class VLLMWebUI {
         }
 
         this.currentView = viewId;
+    }
+
+    lazyLoadTutorials() {
+        const iframe = document.getElementById('tutorials-iframe');
+        const fallback = document.getElementById('tutorials-fallback');
+        if (!iframe || iframe.src) return;
+
+        const url = 'https://micytao.github.io/vllm-workshop/';
+        iframe.src = url;
+
+        iframe.addEventListener('load', () => {
+            iframe.style.display = 'block';
+            if (fallback) fallback.style.display = 'none';
+        });
+        iframe.addEventListener('error', () => {
+            iframe.style.display = 'none';
+            if (fallback) fallback.style.display = 'flex';
+        });
+
+        setTimeout(() => {
+            if (!iframe.contentWindow) {
+                iframe.style.display = 'none';
+                if (fallback) fallback.style.display = 'flex';
+            }
+        }, 10000);
     }
 
     // ============ Theme Toggle ============
@@ -2609,9 +2638,11 @@ number ::= [0-9]+`
         }
 
         // Get run mode (subprocess, container, or remote)
-        let runMode = 'remote';
+        let runMode = 'container';
         if (document.getElementById('run-mode-subprocess').checked) {
             runMode = 'subprocess';
+        } else if (document.getElementById('run-mode-container').checked) {
+            runMode = 'container';
         } else if (document.getElementById('run-mode-remote').checked) {
             runMode = 'remote';
         }
@@ -3092,12 +3123,21 @@ number ::= [0-9]+`
             }
 
             // Build request body
-            // Check if tools are being used - use non-streaming for tool calls
-            // vLLM streaming has issues with tool_calls data not being sent properly
-            const useStreaming = !toolsConfig.tools || toolsConfig.tools.length === 0 || toolsConfig.tool_choice === 'none';
+            // Use non-streaming when tools are active (vLLM streaming has issues
+            // with tool_calls data) or when logprobs are enabled on local
+            // subprocess/container mode (vLLM Metal/CPU has a logprobs IndexError
+            // bug). Remote mode keeps streaming since GPU backends handle it fine.
+            const hasTools = toolsConfig.tools && toolsConfig.tools.length > 0 && toolsConfig.tool_choice !== 'none';
+            const wantsLogprobs = !!this.isLogprobsEnabled?.();
+            const isRemoteMode = !!this.elements.runModeRemote?.checked;
+            const logprobsForcesNonStreaming = wantsLogprobs && !isRemoteMode;
+            let useStreaming = !hasTools && !logprobsForcesNonStreaming;
 
-            if (!useStreaming) {
+            if (hasTools) {
                 console.log('🔧 Tools detected - using non-streaming mode for reliable tool call response');
+            }
+            if (logprobsForcesNonStreaming) {
+                console.log('📊 Logprobs enabled (local mode) - using non-streaming mode (vLLM Metal/CPU logprobs bug workaround)');
             }
 
             const requestBody = {
@@ -3138,18 +3178,35 @@ number ::= [0-9]+`
                 Object.assign(requestBody, this.getLogprobsPayload());
             }
 
-            // Use streaming
-            const response = await fetch('/api/chat', {
+            // Send request, with logprobs fallback on 500
+            let response = await fetch('/api/chat', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(requestBody)
             });
+
+            let logprobsFallback = false;
+            if (!response.ok && response.status === 500 && requestBody.logprobs) {
+                console.log('⚠️ Request with logprobs returned 500 - retrying without logprobs');
+                delete requestBody.logprobs;
+                delete requestBody.top_logprobs;
+                requestBody.stream = !hasTools;
+                response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestBody)
+                });
+                logprobsFallback = true;
+                useStreaming = requestBody.stream;
+            }
 
             if (!response.ok) {
                 const errorText = await response.text();
                 throw new Error(errorText || 'Failed to send message');
+            }
+
+            if (logprobsFallback) {
+                this.showNotification('Logprobs not available — vLLM backend does not support logprobs for this model/platform. Response returned without logprobs.', 'warning');
             }
 
             // Handle non-streaming response (used for tool calls)

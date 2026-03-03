@@ -6,7 +6,21 @@ For detailed release notes, see the [releases/](releases/) folder.
 
 ---
 
-## [v0.1.6](releases/v0.1.6.md) - 2026-03-02
+## [v0.1.7](releases/v0.1.7.md) - 2026-03-03
+
+**Hotfix & Tutorials**
+
+### Fixed
+- 🐛 **Container mode switching broken** - `getConfig()` was missing the `container` radio branch, causing container mode to silently send `remote` to the backend. Restored default to `container` (matching v0.1.5) and added explicit handling for all three modes.
+- 🐛 **Logprobs tooltip clipped on first line** - Changed `.message-content` from `overflow: hidden` to `overflow: visible` so the probability tooltip is no longer cut off by the message container.
+- 🐛 **Logprobs crash on Metal/CPU** - vLLM Metal/CPU backends crash with `IndexError` in `_create_chat_logprobs` when logprobs are enabled. Added transparent fallback: request is retried without logprobs on 500 error, with a user notification.
+
+### Added
+- 📖 **Tutorials** - New "Tutorials" nav item that embeds the [vLLM Workshop](https://micytao.github.io/vllm-workshop/) directly inside vLLM Playground via iframe, with lazy-loading and a fallback link.
+
+---
+
+## [v0.1.6](releases/v0.1.6.md) - 2026-03-02 (yanked)
 
 **Observability Dashboard & Context Insights**
 
