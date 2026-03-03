@@ -3124,20 +3124,22 @@ number ::= [0-9]+`
 
             // Build request body
             // Use non-streaming when tools are active (vLLM streaming has issues
-            // with tool_calls data) or when logprobs are enabled on local
-            // subprocess/container mode (vLLM Metal/CPU has a logprobs IndexError
-            // bug). Remote mode keeps streaming since GPU backends handle it fine.
+            // with tool_calls data) or when logprobs are enabled on Metal/CPU
+            // compute mode (vLLM Metal/CPU has a logprobs IndexError bug).
+            // Remote mode always allows streaming (compute radios are hidden and
+            // may retain stale state). GPU compute mode streams normally.
             const hasTools = toolsConfig.tools && toolsConfig.tools.length > 0 && toolsConfig.tool_choice !== 'none';
             const wantsLogprobs = !!this.isLogprobsEnabled?.();
             const isRemoteMode = !!this.elements.runModeRemote?.checked;
-            const logprobsForcesNonStreaming = wantsLogprobs && !isRemoteMode;
+            const isMetalOrCpu = !!this.elements.modeMetal?.checked || !!this.elements.modeCpu?.checked;
+            const logprobsForcesNonStreaming = wantsLogprobs && !isRemoteMode && isMetalOrCpu;
             let useStreaming = !hasTools && !logprobsForcesNonStreaming;
 
             if (hasTools) {
                 console.log('🔧 Tools detected - using non-streaming mode for reliable tool call response');
             }
             if (logprobsForcesNonStreaming) {
-                console.log('📊 Logprobs enabled (local mode) - using non-streaming mode (vLLM Metal/CPU logprobs bug workaround)');
+                console.log('📊 Logprobs enabled (Metal/CPU mode) - using non-streaming mode (vLLM Metal/CPU logprobs bug workaround)');
             }
 
             const requestBody = {

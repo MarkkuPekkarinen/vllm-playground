@@ -7776,6 +7776,16 @@ def find_claude_command() -> Optional[str]:
         if result:
             return result
 
+    # Check well-known per-user install paths (not always in $PATH)
+    home = Path.home()
+    well_known_paths = [
+        home / ".local" / "bin" / "claude",
+        home / ".npm-global" / "bin" / "claude",
+    ]
+    for p in well_known_paths:
+        if p.exists() and os.access(p, os.X_OK):
+            return str(p)
+
     # Check npm global bin
     try:
         npm_bin = subprocess.run(["npm", "bin", "-g"], capture_output=True, text=True)
