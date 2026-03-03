@@ -7786,6 +7786,15 @@ def find_claude_command() -> Optional[str]:
         if p.exists() and os.access(p, os.X_OK):
             return str(p)
 
+    # When running as root/sudo, also check real user home dirs under /home
+    home_dirs = Path("/home")
+    if home_dirs.is_dir():
+        for user_home in home_dirs.iterdir():
+            for sub in [".local/bin/claude", ".npm-global/bin/claude"]:
+                p = user_home / sub
+                if p.exists() and os.access(p, os.X_OK):
+                    return str(p)
+
     # Check npm global bin
     try:
         npm_bin = subprocess.run(["npm", "bin", "-g"], capture_output=True, text=True)
