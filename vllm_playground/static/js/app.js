@@ -2238,6 +2238,20 @@ number ::= [0-9]+`
                 this.elements.venvPathGroup.style.display = 'none';
             }
 
+            // Clear local-server-only fields to prevent stale config from
+            // leaking into remote mode (e.g. served_model_name overriding
+            // the auto-discovered remote model, causing "no response").
+            if (this.elements.servedModelName) {
+                this.elements.servedModelName.value = '';
+            }
+            if (this.elements.enableToolCalling) {
+                this.elements.enableToolCalling.checked = false;
+            }
+            if (this.elements.toolCallParser) {
+                this.elements.toolCallParser.value = '';
+            }
+            this.updateToolParserVisibility();
+
             this.elements.runModeHelpText.textContent = 'Remote: Connect to an existing vLLM instance';
         }
 
@@ -2662,9 +2676,9 @@ number ::= [0-9]+`
             local_model_path: isLocalModel && localModelPath ? localModelPath : null,  // Add local model path
             use_modelscope: isModelscope,  // Flag to indicate ModelScope source
             modelscope_token: isModelscope && modelscopeToken ? modelscopeToken : null,  // ModelScope token
-            enable_tool_calling: this.elements.enableToolCalling.checked,
-            tool_call_parser: this.elements.toolCallParser.value || null,  // null = auto-detect
-            served_model_name: this.elements.servedModelName?.value.trim() || null,  // null = use model path
+            enable_tool_calling: runMode === 'remote' ? false : this.elements.enableToolCalling.checked,
+            tool_call_parser: runMode === 'remote' ? null : (this.elements.toolCallParser.value || null),
+            served_model_name: runMode === 'remote' ? null : (this.elements.servedModelName?.value.trim() || null),
             speculative_method: null,
             speculative_model: null,
             num_speculative_tokens: null,

@@ -15,6 +15,7 @@ For detailed release notes, see the [releases/](releases/) folder.
 - 🐛 **Logprobs tooltip clipped on first line** - Changed `.message-content` from `overflow: hidden` to `overflow: visible` so the probability tooltip is no longer cut off by the message container.
 - 🐛 **Logprobs crash on Metal/CPU** - vLLM Metal/CPU backends crash with `IndexError` in `_create_chat_logprobs` when logprobs are enabled. Force non-streaming on Metal/CPU compute mode, with transparent fallback retry (without logprobs) on 500 errors. GPU and remote modes stream normally.
 - 🐛 **Claude Code not detected on VPS/Linux** - `find_claude_command()` now checks `~/.local/bin/claude` and `~/.npm-global/bin/claude` as fallback paths, covering the official `curl` installer and common npm global setups. Also scans `/home/*/` directories when running as root/sudo (e.g., systemd services).
+- 🐛 **Mode switch config leak** - Switching from container/subprocess to remote mode no longer carries over stale `served_model_name`, `enable_tool_calling`, and `tool_call_parser` values. These local-server fields are auto-cleared on mode switch, and `getConfig()` explicitly excludes them for remote mode as a safety net.
 
 ### Added
 - 📖 **Tutorials** - New "Tutorials" nav item at the bottom of the navigation sidebar that embeds the [vLLM Workshop](https://micytao.github.io/vllm-workshop/) directly inside vLLM Playground via iframe, with lazy-loading and a fallback link.
