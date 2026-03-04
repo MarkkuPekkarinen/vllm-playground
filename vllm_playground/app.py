@@ -3247,7 +3247,9 @@ async def stop_server():
         server_start_time, \
         current_model_identifier, \
         current_served_model_name, \
-        current_run_mode
+        current_run_mode, \
+        latest_vllm_metrics, \
+        metrics_timestamp
 
     # Check if server is running
     if not await check_vllm_server_running():
@@ -3292,6 +3294,15 @@ async def stop_server():
         current_model_identifier = None
         current_served_model_name = None
         current_run_mode = None
+
+        # Clear all metrics so observability doesn't show stale data
+        latest_vllm_metrics.clear()
+        metrics_timestamp = None
+        metrics_history.clear()
+        metric_store.latest.clear()
+        metric_store.history.clear()
+        metric_store.last_scrape = None
+        metric_store.last_simulated = None
 
         return {"status": "stopped"}
 
