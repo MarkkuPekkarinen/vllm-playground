@@ -102,6 +102,19 @@ class VLLMContainerManager:
         if self.use_sudo:
             logger.info("Container manager initialized with sudo enabled")
 
+    def _nvidia_gpu_flags(self, gpu_device: Optional[str] = None) -> list:
+        """Return the CLI flags to pass NVIDIA GPUs into a container.
+
+        Uses ``--gpus`` for both Docker and Podman.  Docker supports it
+        natively via the NVIDIA Container Runtime; Podman 4.1+ supports it
+        via the nvidia-container-toolkit OCI hooks.  This is simpler and
+        more portable than Podman's CDI (``--device nvidia.com/gpu=…``),
+        which requires extra setup (``nvidia-ctk cdi generate``) that many
+        systems (e.g. DGX Spark) don't have.
+        """
+        spec = f'"device={gpu_device}"' if gpu_device else "all"
+        return ["--gpus", spec]
+
     def get_default_image(self, use_cpu: bool = False, accelerator: str = "nvidia") -> str:
         """
         Get the appropriate built-in default container image based on CPU/GPU mode and accelerator type.
@@ -386,6 +399,14 @@ class VLLMContainerManager:
         else:
             logger.info("Tool calling disabled in config")
 
+        # Generic passthrough for CLI flags not covered by a first-class option
+        # above (e.g. Decision Models' --diffusion-config/--max-logprobs). Kept
+        # last so it can't accidentally clobber an earlier flag's value.
+        extra_args = vllm_config.get("extra_args")
+        if extra_args:
+            vllm_args.extend(str(a) for a in extra_args)
+            logger.info(f"Extra vLLM arguments: {' '.join(str(a) for a in extra_args)}")
+
         return {"environment": env, "volumes": volumes, "ports": ports, "vllm_args": vllm_args}
 
     async def _get_container_config_hash(self, vllm_config: Dict[str, Any]) -> str:
@@ -614,7 +635,7 @@ class VLLMContainerManager:
                 # Wait for readiness if requested
                 if wait_ready:
                     port = vllm_config.get("port", 8000)
-                    readiness = await self.wait_for_ready(port=port)
+                    readiness = await self.wait_for_ready(port=port, container_name=target_name)
                     result.update(readiness)
 
                 return result
@@ -693,19 +714,7 @@ class VLLMContainerManager:
                 else:
                     # NVIDIA CUDA GPU support (default)
                     gpu_device = vllm_config.get("gpu_device")
-                    if self.runtime == "docker":
-                        gpu_spec = f'"device={gpu_device}"' if gpu_device else "all"
-                        podman_cmd.extend(["--gpus", gpu_spec])
-                    else:
-                        # Podman uses --device with CDI
-                        device_spec = f"nvidia.com/gpu={gpu_device}" if gpu_device else "nvidia.com/gpu=all"
-                        podman_cmd.extend(
-                            [
-                                "--device",
-                                device_spec,
-                                "--security-opt=label=disable",
-                            ]
-                        )
+                    podman_cmd.extend(self._nvidia_gpu_flags(gpu_device))
                     gpu_info = f"device={gpu_device}" if gpu_device else "all"
                     logger.info(f"NVIDIA CUDA GPU passthrough enabled for container ({gpu_info})")
 
@@ -748,7 +757,7 @@ class VLLMContainerManager:
             # Wait for readiness if requested
             if wait_ready:
                 port = vllm_config.get("port", 8000)
-                readiness = await self.wait_for_ready(port=port)
+                readiness = await self.wait_for_ready(port=port, container_name=target_name)
                 result.update(readiness)
 
             return result
@@ -760,7 +769,9 @@ class VLLMContainerManager:
             logger.error(f"Unexpected error starting container: {e}")
             raise
 
-    async def wait_for_ready(self, port: int = 8000, timeout: int = 120) -> Dict[str, Any]:
+    async def wait_for_ready(
+        self, port: int = 8000, timeout: int = 120, container_name: Optional[str] = None
+    ) -> Dict[str, Any]:
         """
         Wait for vLLM service inside container to be ready
 
@@ -770,6 +781,15 @@ class VLLMContainerManager:
         Args:
             port: Port where vLLM is listening (default: 8000)
             timeout: Maximum time to wait in seconds (default: 120)
+            container_name: Name of the container to poll (default: CONTAINER_NAME).
+                MUST be passed explicitly by callers using a custom container
+                name (e.g. the isolated Decision Server) -- otherwise the
+                "is it still running?" check below silently checks the WRONG
+                container (CONTAINER_NAME's default, "vllm-service"), which
+                reports not-running whenever that unrelated container happens
+                to be stopped and causes an instant false "container_stopped"
+                failure even though the container this call actually cares
+                about is healthy and still starting up.
 
         Returns:
             Dictionary with status:
@@ -783,14 +803,15 @@ class VLLMContainerManager:
             logger.warning("aiohttp not available - skipping readiness check")
             return {"ready": False, "error": "aiohttp not installed"}
 
-        logger.info(f"Waiting for vLLM to be ready on port {port} (timeout: {timeout}s)...")
+        target_name = container_name or self.CONTAINER_NAME
+        logger.info(f"Waiting for vLLM to be ready on port {port} (container: {target_name}, timeout: {timeout}s)...")
         start_time = time.time()
         last_error = None
 
         while time.time() - start_time < timeout:
             try:
                 # Check if container is still running
-                status = await self.get_container_status()
+                status = await self.get_container_status(container_name=target_name)
                 if not status.get("running", False):
                     elapsed = time.time() - start_time
                     return {"ready": False, "error": "container_stopped", "elapsed_time": round(elapsed, 1)}
@@ -825,6 +846,67 @@ class VLLMContainerManager:
         elapsed = time.time() - start_time
         logger.warning(f"❌ Timeout waiting for vLLM to be ready ({elapsed:.1f}s)")
         return {"ready": False, "error": "timeout", "elapsed_time": round(elapsed, 1), "last_error": last_error}
+
+    async def get_container_logs_snapshot(self, container_name: str, tail: int = 200) -> str:
+        """
+        Fetch a one-shot snapshot of a container's stdout/stderr (no -f follow).
+
+        Intended for failure diagnostics: callers that are about to stop/remove
+        a container after a failed health check should grab this *first*, since
+        `podman rm` destroys log history for good. Best-effort -- returns an
+        "[ERROR] ..." string rather than raising, so a logging failure never
+        masks the original error that triggered the caller's rollback.
+
+        Args:
+            container_name: Exact container name (no default -- callers should
+                always pass the specific container they care about).
+            tail: Number of trailing log lines to fetch.
+
+        Returns:
+            Combined stdout+stderr text (possibly empty if the container never
+            produced output before exiting).
+        """
+        try:
+            result = await self._run_podman_cmd_async(
+                "logs", "--tail", str(tail), container_name, capture_output=True, check=False
+            )
+            return (result.stdout or "") + (result.stderr or "")
+        except Exception as e:
+            logger.error(f"Error fetching log snapshot for {container_name}: {e}")
+            return f"[ERROR] Failed to fetch container logs: {e}"
+
+    async def get_container_exit_state(self, container_name: str) -> Dict[str, Any]:
+        """
+        Fetch `podman inspect`'s .State for a container, before it's removed.
+
+        A container that fails before its entrypoint ever runs (e.g. GPU
+        device-injection/CDI failures, OCI runtime create errors) produces
+        *no* stdout/stderr for get_container_logs_snapshot() to capture, but
+        .State.Error/.ExitCode/.OOMKilled almost always have something useful
+        even then -- this is the fallback when logs come back empty.
+
+        Returns a dict with whatever of {status, exit_code, error, oom_killed,
+        started_at, finished_at} podman reported, or {"error": "..."} if the
+        inspect itself failed (e.g. container already gone).
+        """
+        try:
+            result = await self._run_podman_cmd_async(
+                "inspect", container_name, "--format", "{{json .State}}", capture_output=True, check=False
+            )
+            if result.returncode != 0 or not result.stdout.strip():
+                return {"error": (result.stderr or "inspect returned no output").strip()}
+            state = json.loads(result.stdout.strip())
+            return {
+                "status": state.get("Status"),
+                "exit_code": state.get("ExitCode"),
+                "error": state.get("Error") or None,
+                "oom_killed": state.get("OOMKilled"),
+                "started_at": state.get("StartedAt"),
+                "finished_at": state.get("FinishedAt"),
+            }
+        except Exception as e:
+            logger.error(f"Error fetching exit state for {container_name}: {e}")
+            return {"error": f"Failed to fetch container exit state: {e}"}
 
     async def stop_container(self, remove: bool = False, container_name: Optional[str] = None) -> Dict[str, str]:
         """
@@ -1211,30 +1293,7 @@ class VLLMContainerManager:
             # Add GPU flags based on accelerator and runtime
             gpu_device = config.get("gpu_device")  # e.g., "0", "1", "0,1"
             if accelerator == "nvidia":
-                if self.runtime == "docker":
-                    # Docker uses --gpus flag
-                    if gpu_device:
-                        # Specific GPU selection: --gpus '"device=0"' or '"device=0,1"'
-                        container_cmd.extend(["--gpus", f'"device={gpu_device}"'])
-                    else:
-                        container_cmd.extend(["--gpus", "all"])
-                else:
-                    # Podman uses --device with CDI (Container Device Interface)
-                    if gpu_device:
-                        # Specific GPU selection for Podman
-                        # For single GPU: nvidia.com/gpu=0
-                        # For multiple: need to add multiple --device flags
-                        for dev in gpu_device.split(","):
-                            container_cmd.extend(["--device", f"nvidia.com/gpu={dev.strip()}"])
-                        container_cmd.append("--security-opt=label=disable")
-                    else:
-                        container_cmd.extend(
-                            [
-                                "--device",
-                                "nvidia.com/gpu=all",
-                                "--security-opt=label=disable",
-                            ]
-                        )
+                container_cmd.extend(self._nvidia_gpu_flags(gpu_device))
             elif accelerator == "amd":
                 # AMD ROCm requires additional security flags
                 container_cmd.extend(
