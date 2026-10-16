@@ -30,13 +30,16 @@ Run subprocess, container, and remote vLLM servers side by side; switch tabs, sa
 
 ![Instances management grid](https://raw.githubusercontent.com/micytao/vllm-playground/main/assets/vllm-playground-multiinstnaces-view.png)
 
-### 🆕 What's New in v0.1.8
+### 🆕 What's New in v0.2.0
 
-- **Multi-instance backends** — Registry-backed tabs and **Management → Instances**; run subprocess, container, and remote servers side by side ([guide](docs/MULTI_INSTANCE_GUIDE.md)).
-- **Remote & LiteLLM** — Tougher URL/probing, `/v1/models` for the chat model list, better context limits from gateway metadata.
-- **Benchmarking** — Remote Bearer auth and UI API key (remote only); **model ID follows the benchmark’s target instance** so local vLLM is not called with a stale remote model name.
+![Decision Models tab](https://raw.githubusercontent.com/micytao/vllm-playground/main/assets/decision%20models.png)
 
-*v0.1.6 introduced the Observability Dashboard, PagedAttention visualizer, token counter, logprobs, and speculative decoding — see **[Changelog](CHANGELOG.md)** and **[v0.1.6](releases/v0.1.6.md)** for details.*
+- **Decision Models (Experimental)** — A brand-new sandbox tab for structured-read decisions powered by DiffusionGemma and Jev / System One. Gallery of 12 use cases across 4 tabbed categories (Noul, Choice, Score, Combination), mock-by-default evaluation, and two interactive demos (Race Lane Decider, Rubric Grading Puzzle). Fully isolated from the main Server Config flow — see **[Decision Models Guide](docs/DECISION_MODELS_GUIDE.md)**.
+- **Remote Jev endpoint** — Connect to an external Jev API (e.g. `https://api.typesafe.ai`) with API key authentication. Credentials are validated at connect time with a probe request, not just a reachability check.
+- **5 new use cases from TypeSafe cookbooks** — LLM Guardrails, Content Moderation, RAG Passage Reranking, Citation Verification, and Confidence-Gated Model Routing, organized into a tabbed category gallery with count badges.
+- **Security hardening** — Debug endpoints gated behind explicit opt-in (CWE-862); SQL injection template literal fix.
+
+*v0.1.9 added CI/CD pipeline, configurable container images, and remote mode fixes; v0.1.8 added multi-instance backends — see **[Changelog](CHANGELOG.md)** for the full history.*
 
 ---
 
@@ -75,6 +78,7 @@ vllm-playground status              # Check status
 
 | Feature | Description |
 |---------|-------------|
+| 🧠 **Decision Models** | Structured-read decisions (Noul, Choice, Score) with Jev/DiffusionGemma — local or remote |
 | 🌐 **Remote Server** | Connect to any remote vLLM instance via URL + API key |
 | 🧩 **Multi-instance** | Several backends at once (subprocess, container, remote); tabs + **[Instances](docs/MULTI_INSTANCE_GUIDE.md)** page |
 | 🖼️ **VLM Support** | Upload images and chat with vision models (Qwen2.5-VL, LLaVA) |
@@ -210,6 +214,8 @@ See [Custom venv Guide](docs/CUSTOM_VENV_GUIDE.md) for details.
 
 ### Releases
 - **[Changelog](CHANGELOG.md)** - Version history and changes
+- **[v0.2.0](releases/v0.2.0.md)** - Decision Models (Experimental), remote Jev endpoint, category gallery
+- **[v0.1.9](releases/v0.1.9.md)** - CI/CD pipeline, configurable container images, remote mode fixes
 - **[v0.1.8](releases/v0.1.8.md)** - Multi-instance backends & remote polish
 - **[v0.1.7](releases/v0.1.7.md)** - Hotfix & tutorials
 - **[v0.1.6](releases/v0.1.6.md)** - Observability dashboard, PagedAttention visualizer, token counter, logprobs

@@ -32,6 +32,16 @@ DEFAULTS: Dict[str, Any] = {
     "image_override_cpu": "",
     "image_override_omni_nvidia": "",
     "image_override_omni_amd": "",
+    # Decision Models (Experimental) tab: nightly vLLM image tag override,
+    # diffusion canvas length, and an optional custom HF model repo override.
+    # See vllm_playground/decision_models.py for defaults/validation.
+    "decision_image_tag": "",
+    "decision_canvas_length": 64,
+    "decision_model_override": "",
+    # Remote Jev endpoint (connect to an externally-managed /v1/systemone
+    # server instead of launching a local container + sidecar).
+    "decision_remote_url": "",
+    "decision_remote_api_key": "",
 }
 
 # Keys that are allowed to be stored (acts as a simple schema guard)

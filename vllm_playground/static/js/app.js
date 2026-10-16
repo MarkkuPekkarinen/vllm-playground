@@ -7,6 +7,7 @@ import { initImageSettingsModule } from './modules/imageSettings.js';
 import { initTokenCounterModule } from './modules/token-counter.js';
 import { initLogprobsModule } from './modules/logprobs.js';
 import { initObservabilityModule } from './modules/observability.js';
+import { initDecisionModelsModule } from './modules/decisionModels.js';
 import { metricsPoller } from './modules/metrics-poller.js';
 
 class VLLMWebUI {
@@ -563,6 +564,12 @@ class VLLMWebUI {
                         this.onObservabilityViewActivated();
                     }
                     break;
+                case 'decision-models':
+                    viewTitle.innerHTML = '<span class="view-title-icon icon-decision-header"></span> Decision Models <span class="view-title-badge">Experimental</span>';
+                    if (this.onDecisionModelsViewActivated) {
+                        this.onDecisionModelsViewActivated();
+                    }
+                    break;
                 case 'instances':
                     viewTitle.innerHTML = '<span class="view-title-icon icon-instances-header"></span> Instances';
                     this.refreshInstancesPage();
@@ -593,6 +600,13 @@ class VLLMWebUI {
         if (this.currentView === 'claude-code' && viewId !== 'claude-code') {
             if (this.onClaudeCodeViewDeactivated) {
                 this.onClaudeCodeViewDeactivated();
+            }
+        }
+
+        // Handle view deactivation for Decision Models
+        if (this.currentView === 'decision-models' && viewId !== 'decision-models') {
+            if (this.onDecisionModelsViewDeactivated) {
+                this.onDecisionModelsViewDeactivated();
             }
         }
 
@@ -1832,6 +1846,9 @@ number ::= [0-9]+`
             // Initialize Observability Dashboard
             initObservabilityModule(this);
 
+            // Initialize Decision Models (Experimental)
+            initDecisionModelsModule(this);
+
             // Sidebar health badge (replaces per-panel resize handles)
             this.initSidebarHealthBadge();
 
@@ -1840,6 +1857,9 @@ number ::= [0-9]+`
 
             // Preload Observability template
             this.loadObservabilityTemplate();
+
+            // Preload Decision Models template
+            this.loadDecisionModelsTemplate();
 
             // Handle ModelScope availability
             this.modelscopeInstalled = features.modelscope_installed || false;
@@ -2726,22 +2746,34 @@ number ::= [0-9]+`
 
         content.innerHTML = `
             <h3 style="margin-top: 0;">Browse Directories</h3>
-            <div style="margin-bottom: 16px; padding: 12px; background: #0f172a; border-radius: 6px; font-family: monospace; word-break: break-all;">
-                ${currentPath}
-            </div>
-            <div id="folder-list" style="margin-bottom: 16px;">
-                ${directories.map(dir => `
-                    <div class="folder-item" data-path="${dir.path}" style="padding: 8px 12px; margin: 4px 0; background: #334155; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 8px;">
-                        <span style="font-size: 1.2em;">📁</span>
-                        <span>${dir.name}</span>
-                    </div>
-                `).join('')}
-            </div>
+            <div id="current-path-display" style="margin-bottom: 16px; padding: 12px; background: #0f172a; border-radius: 6px; font-family: monospace; word-break: break-all;"></div>
+            <div id="folder-list" style="margin-bottom: 16px;"></div>
             <div style="display: flex; gap: 8px; justify-content: flex-end;">
                 <button id="browser-select-btn" class="btn btn-primary">Select This Folder</button>
                 <button id="browser-cancel-btn" class="btn btn-secondary">Cancel</button>
             </div>
         `;
+
+        content.querySelector('#current-path-display').textContent = currentPath;
+
+        const folderList = content.querySelector('#folder-list');
+        directories.forEach(dir => {
+            const item = document.createElement('div');
+            item.className = 'folder-item';
+            item.dataset.path = dir.path;
+            item.style.cssText = 'padding: 8px 12px; margin: 4px 0; background: #334155; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 8px;';
+
+            const icon = document.createElement('span');
+            icon.style.fontSize = '1.2em';
+            icon.textContent = '📁';
+
+            const name = document.createElement('span');
+            name.textContent = dir.name;
+
+            item.appendChild(icon);
+            item.appendChild(name);
+            folderList.appendChild(item);
+        });
 
         modal.appendChild(content);
         document.body.appendChild(modal);

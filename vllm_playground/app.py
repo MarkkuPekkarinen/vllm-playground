@@ -724,7 +724,7 @@ omni_websocket_connections: List[WebSocket] = []
 omni_inprocess_model: Optional[Any] = None  # Holds the Omni model when using in-process mode
 
 # User settings store (persists to ~/.vllm-playground/settings.json)
-from . import image_catalog  # noqa: E402
+from . import decision_models, image_catalog  # noqa: E402
 from .settings_store import SettingsStore  # noqa: E402
 
 settings_store = SettingsStore()
@@ -2095,10 +2095,23 @@ async def get_status():
     return JSONResponse(content=server_status.model_dump(), headers={"Cache-Control": "no-cache"})
 
 
+def _require_debug_endpoints_enabled() -> None:
+    """Debug endpoints leak backend/infra details (connection config,
+    Kubernetes namespace/service names, raw upstream health-check
+    responses) that are useful for attacker reconnaissance if this app is
+    ever reachable beyond localhost (e.g. an OpenShift Route). They're
+    opt-in only, off by default; see CWE-862 (missing authorization).
+    """
+    if os.environ.get("VLLM_PLAYGROUND_ENABLE_DEBUG_ENDPOINTS", "false").lower() != "true":
+        raise HTTPException(status_code=404, detail="Not Found")
+
+
 @app.get("/api/debug/connection")
 async def debug_connection():
     """Debug endpoint to show connection configuration"""
     global current_config, current_run_mode
+
+    _require_debug_endpoints_enabled()
 
     is_kubernetes = os.path.exists("/var/run/secrets/kubernetes.io/serviceaccount/token")
 
@@ -2138,6 +2151,8 @@ async def debug_connection():
 async def test_vllm_connection():
     """Test if we can reach the vLLM service"""
     global current_config, current_run_mode
+
+    _require_debug_endpoints_enabled()
 
     if not current_config:
         return {"error": "No server configuration available"}
@@ -2185,6 +2200,33 @@ async def save_settings(request: Request):
                 status_code=400,
                 detail=f"Invalid image reference for {key}: {data[key]!r}",
             )
+
+    # Decision Models (Experimental) tab settings -- same conservative image
+    # reference check as above, plus bounds on the diffusion canvas length.
+    if data.get("decision_image_tag") and not image_catalog.is_valid_custom_tag(data["decision_image_tag"]):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid image reference for decision_image_tag: {data['decision_image_tag']!r}",
+        )
+    if data.get("decision_model_override") and not image_catalog.is_valid_custom_tag(data["decision_model_override"]):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid model repo for decision_model_override: {data['decision_model_override']!r}",
+        )
+    if "decision_canvas_length" in data:
+        canvas_length = data["decision_canvas_length"]
+        if not isinstance(canvas_length, int) or not (16 <= canvas_length <= 512) or canvas_length % 16 != 0:
+            raise HTTPException(
+                status_code=400,
+                detail="decision_canvas_length must be a multiple of 16 between 16 and 512",
+            )
+    if data.get("decision_remote_url") and not str(data["decision_remote_url"]).lower().startswith(
+        ("http://", "https://")
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="decision_remote_url must start with http:// or https://",
+        )
 
     return settings_store.update(data)
 
@@ -2604,6 +2646,18 @@ async def get_hardware_capabilities():
         detection_method: str - How GPU was detected (nvidia-smi, amd-smi, kubernetes, none)
         accelerator: str - Detected accelerator type (nvidia, amd, or null if none)
     """
+    # The actual detection below is entirely synchronous (subprocess.run calls
+    # with timeouts, plus an un-timed Kubernetes API call) and was previously
+    # run directly on the event loop. A single slow/hanging call here (e.g. a
+    # K8s API server that's unreachable, or nvidia-smi taking longer than
+    # usual under load) would stall every other concurrent request on this
+    # server -- including unrelated static file fetches -- for as long as it
+    # takes. Running it in a worker thread keeps this endpoint from ever
+    # blocking the rest of the app.
+    return await asyncio.to_thread(_detect_hardware_capabilities_sync)
+
+
+def _detect_hardware_capabilities_sync() -> Dict[str, Any]:
     gpu_available = False
     detection_method = "none"
     accelerator = None  # Will be "nvidia" or "amd" if detected
@@ -5612,8 +5666,177 @@ async def get_recipe_config(category_id: str, recipe_id: str):
             status_code=404, content={"error": f"Recipe '{recipe_id}' not found in category '{category_id}'"}
         )
     except Exception as e:
-        logger.error(f"Error loading recipe: {e}")
+        logger.error(f"Error loading recipe config: {e}")
         return JSONResponse(status_code=500, content={"error": f"Failed to load recipe: {str(e)}"})
+
+
+# ---------------------------------------------------------------------------
+# Decision Models (Experimental)
+#
+# Sandbox tab for exploring vLLM's native structured-read decision capability
+# (DiffusionGemma + single-step diffusion canvas reads). Fully isolated from
+# the main Server Config / instance-manager flow: these endpoints only touch
+# decision_models.py, never the global vllm_process/current_config state used
+# elsewhere in this file. Phase 1: catalog + mocked evaluation only, clearly
+# labeled as simulated -- no live vLLM/GPU dependency yet.
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/decision/examples")
+async def get_decision_examples():
+    """Return the curated Decision Models use-case catalog for the gallery."""
+    return {
+        "use_cases": decision_models.list_use_cases(),
+        "category_order": decision_models.CATEGORY_ORDER,
+        "category_labels": decision_models.CATEGORY_LABELS,
+    }
+
+
+@app.get("/api/decision/status")
+async def get_decision_status():
+    """Report real Decision Server lifecycle status (phase/ready/message)."""
+    return decision_models.get_server_status()
+
+
+@app.get("/api/decision/server/logs")
+async def get_decision_server_logs(limit: int = 200):
+    """Return recently buffered Decision Server + sidecar log lines (legacy
+    HTTP polling fallback; the frontend now prefers the WebSocket below)."""
+    return {"lines": decision_models.get_server_logs(limit=limit)}
+
+
+# -- Decision Models WebSocket log streaming --------------------------------
+
+decision_websocket_connections: List[WebSocket] = []
+
+
+async def broadcast_decision_log(message: str):
+    """Broadcast a log line to all connected Decision Models WebSocket clients."""
+    if not message:
+        return
+    disconnected = []
+    for ws in decision_websocket_connections:
+        try:
+            await ws.send_text(message)
+        except Exception as e:
+            logger.error(f"Error sending to decision websocket: {e}")
+            disconnected.append(ws)
+    for ws in disconnected:
+        decision_websocket_connections.remove(ws)
+
+
+# Register the broadcast callback so decision_models._log() pushes lines
+# over WebSocket automatically.
+decision_models.set_log_callback(broadcast_decision_log)
+
+
+@app.websocket("/ws/decision/logs")
+async def websocket_decision_logs(websocket: WebSocket):
+    """WebSocket endpoint for streaming Decision Server logs."""
+    await websocket.accept()
+    decision_websocket_connections.append(websocket)
+
+    try:
+        await websocket.send_text("[Decision] Connected to Decision Server log stream")
+
+        # Send buffered log history so the client sees recent logs immediately
+        for line in decision_models.get_server_logs(limit=200):
+            await websocket.send_text(line)
+
+        # Keep connection alive
+        while True:
+            try:
+                await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+            except asyncio.TimeoutError:
+                await websocket.send_text("")
+
+    except WebSocketDisconnect:
+        logger.info("Decision WebSocket disconnected")
+    except Exception as e:
+        logger.error(f"Decision WebSocket error: {e}")
+    finally:
+        if websocket in decision_websocket_connections:
+            decision_websocket_connections.remove(websocket)
+
+
+class DecisionServerStartRequest(BaseModel):
+    # mode: "container" (default) launches the local nightly vLLM container +
+    # sidecar; "remote" connects to an externally-managed Jev /v1/systemone
+    # endpoint with no local launch.
+    mode: Optional[str] = "container"
+    model_id: Optional[str] = None
+    image_tag: Optional[str] = None
+    canvas_length: Optional[int] = None
+    gpu_device: Optional[str] = None
+    remote_url: Optional[str] = None
+    remote_api_key: Optional[str] = None
+
+
+@app.post("/api/decision/server/start")
+async def post_decision_server_start(request: DecisionServerStartRequest):
+    """Launch or connect the Decision Server. In "container" mode, launch the
+    dedicated nightly vLLM DiffusionGemma container + structured_server.py
+    sidecar; in "remote" mode, connect to an externally-managed Jev endpoint.
+    Fully isolated either way: never touches vllm_process/current_config, and
+    is not registered in backend_registry.py (see the resolved start/stop
+    lifecycle design)."""
+    # Fall back to persisted Settings > Decision Models overrides (if any)
+    # before decision_models' own hardcoded defaults, so a user's saved
+    # nightly tag / canvas length / model override / remote endpoint survive
+    # across launches.
+    saved = settings_store.get()
+    try:
+        if request.mode == "remote":
+            return await decision_models.connect_remote_decision_server(
+                url=request.remote_url or saved.get("decision_remote_url") or "",
+                model_id=request.model_id or saved.get("decision_model_override") or None,
+                api_key=request.remote_api_key or saved.get("decision_remote_api_key") or None,
+            )
+        return await decision_models.start_decision_server(
+            model_id=request.model_id or saved.get("decision_model_override") or None,
+            image_tag=request.image_tag or saved.get("decision_image_tag") or None,
+            canvas_length=request.canvas_length or saved.get("decision_canvas_length") or None,
+            gpu_device=request.gpu_device,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
+    except Exception as e:
+        logger.error(f"Decision Server start failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from None
+
+
+@app.post("/api/decision/server/stop")
+async def post_decision_server_stop():
+    """Stop the Decision Server's sidecar and container, if running."""
+    try:
+        return await decision_models.stop_decision_server()
+    except Exception as e:
+        logger.error(f"Decision Server stop failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from None
+
+
+class DecisionEvaluateRequest(BaseModel):
+    state: Any
+    questions: Dict[str, Any]
+
+
+@app.post("/api/decision/evaluate")
+async def post_decision_evaluate(request: DecisionEvaluateRequest):
+    """Evaluate a System One-shaped {state, questions} request.
+
+    Routed to the live Decision Server when it's ready, otherwise (or on a
+    live-call failure) falls back to decision_models' deterministic mock
+    evaluator. The response is always explicitly tagged "source": "mock" or
+    "live" so the frontend can show an accurate badge rather than presenting
+    a simulated result as real.
+    """
+    try:
+        return await decision_models.evaluate(request.state, request.questions)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
+    except Exception as e:
+        logger.error(f"Decision evaluate failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Decision evaluation failed: {str(e)}") from None
 
 
 @app.post("/api/recipes/sync")
